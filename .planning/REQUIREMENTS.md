@@ -43,7 +43,7 @@
 - [x] **GIT-02**: User can stage, unstage, commit, and discard changes on remote projects
 - [x] **GIT-03**: User can create, switch, and delete branches on remote projects
 - [x] **GIT-04**: User can push and pull on remote projects
-- [ ] **GIT-05**: All existing git panel features work identically for remote projects
+- [x] **GIT-05**: All existing git panel features work identically for remote projects
 
 ### AI Chat
 
@@ -128,7 +128,7 @@
 | GIT-02 | Phase 3 | Complete |
 | GIT-03 | Phase 3 | Complete |
 | GIT-04 | Phase 3 | Complete |
-| GIT-05 | Phase 3 | Pending |
+| GIT-05 | Phase 3 | Complete |
 | CHAT-01 | Phase 3 | Pending |
 | CHAT-02 | Phase 3 | Pending |
 | CHAT-03 | Phase 3 | Pending |

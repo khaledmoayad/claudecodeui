@@ -66,10 +66,10 @@ Plans:
 **Plans:** 5 plans
 
 Plans:
-- [ ] 03-01-PLAN.md — Daemon git/exec handler + shared git parser extraction
+- [x] 03-01-PLAN.md — Daemon git/exec handler + shared git parser extraction
 - [x] 03-02-PLAN.md — Daemon file watcher with chokidar + watch RPC methods
-- [ ] 03-03-PLAN.md — LocalOperations/RemoteOperations git methods + route migration
-- [ ] 03-04-PLAN.md — Remote Claude CLI chat via daemon + NormalizedMessage translation
+- [x] 03-03-PLAN.md — LocalOperations/RemoteOperations git methods + route migration
+- [x] 03-04-PLAN.md — Remote Claude CLI chat via daemon + NormalizedMessage translation
 - [ ] 03-05-PLAN.md — File watch relay to frontend + reconnection state recovery
 
 ### Phase 4: Frontend Integration
