@@ -58,7 +58,7 @@
 - [ ] **UI-02**: Wizard collects SSH config, tests connection, and lets user select a remote directory
 - [ ] **UI-03**: Remote projects appear alongside local projects in the sidebar with a visual distinction
 - [ ] **UI-04**: Taskmaster UI elements are hidden for remote projects
-- [ ] **UI-05**: All remote-specific UI strings are added to i18n translation files
+- [x] **UI-05**: All remote-specific UI strings are added to i18n translation files
 
 ### Abstraction
 
@@ -137,7 +137,7 @@
 | UI-02 | Phase 4 | Pending |
 | UI-03 | Phase 4 | Pending |
 | UI-04 | Phase 4 | Pending |
-| UI-05 | Phase 4 | Pending |
+| UI-05 | Phase 4 | Complete |
 | ABS-01 | Phase 2 | Complete |
 | ABS-02 | Phase 2 | Complete |
 | ABS-03 | Phase 2 | Complete |

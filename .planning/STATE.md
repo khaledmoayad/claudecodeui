@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-05-PLAN.md
-last_updated: "2026-04-02T19:22:46.873Z"
+stopped_at: Completed 04-01-PLAN.md
+last_updated: "2026-04-02T19:47:45.629Z"
 last_activity: 2026-04-02
 progress:
   total_phases: 4
   completed_phases: 0
-  total_plans: 8
+  total_plans: 11
   completed_plans: 6
   percent: 25
 ---
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-01)
 ## Current Position
 
 Phase: 03 (full-feature-parity) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-04-02
 
@@ -62,6 +62,7 @@ Progress: [##........] 25%
 | Phase 02 P03 | 5min | 2 tasks | 3 files |
 | Phase 03 P03 | 5min | 3 tasks | 3 files |
 | Phase 03 P05 | 4min | 2 tasks | 3 files |
+| Phase 04 P01 | 7min | 2 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -95,6 +96,7 @@ Recent decisions affecting current work:
 - [Phase 03]: AI commit message generation stays in routes file (SDK calls always local, not delegated to remote)
 - [Phase 03]: Factory pattern for remote-connections router to enable lifecycle hook injection from monolith (avoids circular dependency)
 - [Phase 03]: Watched paths preserved across reconnection (only notification listeners rebuilt) for seamless recovery
+- [Phase 04]: add-project endpoint bypasses addProjectManually and directly uses loadProjectConfig/saveProjectConfig for remote paths
 
 ### Pending Todos
 
@@ -108,6 +110,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-02T19:22:46.867Z
-Stopped at: Completed 03-05-PLAN.md
+Last session: 2026-04-02T19:47:45.623Z
+Stopped at: Completed 04-01-PLAN.md
 Resume file: None
