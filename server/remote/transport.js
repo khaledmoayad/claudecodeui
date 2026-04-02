@@ -85,7 +85,9 @@ export class SSHTransport {
       this._pendingRequests.delete(msg.id);
 
       if (msg.error) {
-        pending.reject(new Error(msg.error.message || 'RPC error'));
+        const rpcErr = new Error(msg.error.message || 'RPC error');
+        rpcErr.code = msg.error.code;
+        pending.reject(rpcErr);
       } else {
         pending.resolve(msg.result);
       }
