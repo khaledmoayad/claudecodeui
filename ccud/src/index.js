@@ -18,7 +18,7 @@ writePidFile();
  * @param {object} msg - Raw JSON-RPC message object
  * @returns {object|null} JSON-RPC response or null for notifications
  */
-function processSingleMessage(msg) {
+async function processSingleMessage(msg) {
   // If msg has no method property, ignore (it's a response, not a request)
   if (!msg.method) return null;
 
@@ -31,7 +31,7 @@ function processSingleMessage(msg) {
   if (msg.method === 'initialize') {
     result = handleInitialize(msg.params);
   } else if (msg.method.startsWith('fs/')) {
-    const fsResult = handleFs(msg.method, msg.params);
+    const fsResult = await handleFs(msg.method, msg.params);
     if (fsResult.error) {
       errorResult = fsResult.error;
     } else {
@@ -63,7 +63,7 @@ async function handleIncoming(msg) {
     if (responses.length) transport.send(responses);
     return;
   }
-  const response = processSingleMessage(msg);
+  const response = await processSingleMessage(msg);
   if (response) transport.send(response);
 }
 
