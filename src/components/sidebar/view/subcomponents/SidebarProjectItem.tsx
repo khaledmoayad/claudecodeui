@@ -1,10 +1,12 @@
-import { Check, ChevronDown, ChevronRight, Edit3, Folder, FolderOpen, Star, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Edit3, Folder, FolderOpen, Server, Star, Trash2, X } from 'lucide-react';
 import type { TFunction } from 'i18next';
 import { Button } from '../../../../shared/view/ui';
 import { cn } from '../../../../lib/utils';
 import type { Project, ProjectSession, SessionProvider } from '../../../../types/app';
 import type { MCPServerStatus, SessionWithProvider } from '../../types/types';
+import { isRemoteProject } from '../../../../utils/remote';
 import { getTaskIndicatorStatus } from '../../utils/utils';
+import ConnectionStatusIndicator from './ConnectionStatusIndicator';
 import TaskIndicator from './TaskIndicator';
 import SidebarProjectSessions from './SidebarProjectSessions';
 
@@ -95,6 +97,7 @@ export default function SidebarProjectItem({
 }: SidebarProjectItemProps) {
   const isSelected = selectedProject?.name === project.name;
   const isEditing = editingProject === project.name;
+  const isRemote = isRemoteProject(project);
   const hasMoreSessions = project.sessionMeta?.hasMore === true;
   const sessionCountDisplay = getSessionCountDisplay(sessions, hasMoreSessions);
   const sessionCountLabel = `${sessionCountDisplay} session${sessions.length === 1 ? '' : 's'}`;
@@ -137,7 +140,9 @@ export default function SidebarProjectItem({
                     isExpanded ? 'bg-primary/10' : 'bg-muted',
                   )}
                 >
-                  {isExpanded ? (
+                  {isRemote ? (
+                    <Server className="h-4 w-4 text-indigo-500 dark:text-indigo-400" />
+                  ) : isExpanded ? (
                     <FolderOpen className="h-4 w-4 text-primary" />
                   ) : (
                     <Folder className="h-4 w-4 text-muted-foreground" />
@@ -173,8 +178,13 @@ export default function SidebarProjectItem({
                   ) : (
                     <>
                       <div className="flex min-w-0 flex-1 items-center justify-between">
-                        <h3 className="truncate text-sm font-medium text-foreground">{project.displayName}</h3>
-                        {tasksEnabled && (
+                        <div className="flex min-w-0 items-center">
+                          <h3 className="truncate text-sm font-medium text-foreground">{project.displayName}</h3>
+                          {isRemote && (
+                            <ConnectionStatusIndicator state="disconnected" size="xs" className="ml-1.5" />
+                          )}
+                        </div>
+                        {tasksEnabled && !isRemote && (
                           <TaskIndicator
                             status={taskStatus}
                             size="xs"
@@ -281,7 +291,9 @@ export default function SidebarProjectItem({
           onClick={selectAndToggleProject}
         >
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            {isExpanded ? (
+            {isRemote ? (
+              <Server className="h-4 w-4 flex-shrink-0 text-indigo-500 dark:text-indigo-400" />
+            ) : isExpanded ? (
               <FolderOpen className="h-4 w-4 flex-shrink-0 text-primary" />
             ) : (
               <Folder className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
@@ -311,8 +323,13 @@ export default function SidebarProjectItem({
                 </div>
               ) : (
                 <div>
-                  <div className="truncate text-sm font-semibold text-foreground" title={project.displayName}>
-                    {project.displayName}
+                  <div className="flex items-center">
+                    <div className="truncate text-sm font-semibold text-foreground" title={project.displayName}>
+                      {project.displayName}
+                    </div>
+                    {isRemote && (
+                      <ConnectionStatusIndicator state="disconnected" size="xs" className="ml-1.5 flex-shrink-0" />
+                    )}
                   </div>
                   <div className="text-xs text-muted-foreground">
                     {sessionCountDisplay}
