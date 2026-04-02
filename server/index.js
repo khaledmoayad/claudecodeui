@@ -69,6 +69,7 @@ import messagesRoutes from './routes/messages.js';
 import remoteHostsRoutes from './routes/remote-hosts.js';
 import remoteConnectionRoutes from './routes/remote-connections.js';
 import { getOperationsForProject } from './remote/operations.js';
+import { getConnection } from './remote/connection-manager.js';
 import { createNormalizedMessage } from './providers/types.js';
 import { startEnabledPluginServers, stopAllPlugins, getPluginPort } from './utils/plugin-process-manager.js';
 import { initializeDatabase, sessionNamesDb, applyCustomSessionNames } from './database/db.js';
@@ -1704,6 +1705,129 @@ function handleShellConnection(ws) {
                 urlDetectionBuffer = '';
                 announcedAuthUrls.clear();
 
+                // Detect if this is a remote project
+                if (data.hostId) {
+                  const remoteHostId = data.hostId;
+                  const remoteSessionKey = `remote:${remoteHostId}:${sessionId || 'default'}`;
+                  ptySessionKey = remoteSessionKey;
+
+                  // Check for existing cached session
+                  const existingRemoteSession = ptySessionsMap.get(remoteSessionKey);
+                  if (existingRemoteSession) {
+                    console.log('[Shell] Reconnecting to remote session:', remoteSessionKey);
+                    existingRemoteSession.ws = ws;
+                    existingRemoteSession.lastActivity = Date.now();
+                    shellProcess = existingRemoteSession.process;
+
+                    // Replay buffered output
+                    if (existingRemoteSession.outputBuffer) {
+                      ws.send(JSON.stringify({ type: 'output', data: existingRemoteSession.outputBuffer }));
+                    }
+
+                    // Clear any pending timeout
+                    if (existingRemoteSession.timeoutId) {
+                      clearTimeout(existingRemoteSession.timeoutId);
+                      existingRemoteSession.timeoutId = null;
+                    }
+
+                    return;
+                  }
+
+                  // Get ssh2 client from connection manager
+                  const conn = getConnection(remoteHostId);
+                  if (!conn || !conn.isReady || !conn.client) {
+                    ws.send(JSON.stringify({ type: 'error', error: 'Remote host not connected' }));
+                    ws.close();
+                    return;
+                  }
+
+                  const sshClient = conn.client;
+                  const window = {
+                    cols: data.cols || 80,
+                    rows: data.rows || 24,
+                    term: 'xterm-256color',
+                  };
+
+                  const shellOptions = {
+                    env: { COLORTERM: 'truecolor', FORCE_COLOR: '3' },
+                  };
+
+                  sshClient.shell(window, shellOptions, (err, stream) => {
+                    if (err) {
+                      console.error('[Shell] Remote shell error:', err.message);
+                      ws.send(JSON.stringify({ type: 'error', error: 'Failed to open remote shell: ' + err.message }));
+                      ws.close();
+                      return;
+                    }
+
+                    console.log('[Shell] Remote shell opened for host:', remoteHostId);
+
+                    // Create ShellSession-compatible wrapper
+                    let outputBuffer = '';
+                    const MAX_BUFFER = 100000;
+
+                    shellProcess = {
+                      write(inputData) { stream.write(inputData); },
+                      // CRITICAL: ssh2 setWindow takes (rows, cols, height, width) -- rows FIRST
+                      // node-pty resize takes (cols, rows) -- cols FIRST
+                      // External API always uses (cols, rows) matching xterm.js
+                      resize(cols, rows) { stream.setWindow(rows, cols, 0, 0); },
+                      kill() { stream.close(); },
+                      pid: null,
+                    };
+
+                    // Data from remote -> client
+                    stream.on('data', (chunk) => {
+                      const text = chunk.toString();
+                      outputBuffer += text;
+                      if (outputBuffer.length > MAX_BUFFER) {
+                        outputBuffer = outputBuffer.slice(-MAX_BUFFER);
+                      }
+
+                      const session = ptySessionsMap.get(remoteSessionKey);
+                      if (session) {
+                        session.outputBuffer = outputBuffer;
+                        session.lastActivity = Date.now();
+                      }
+
+                      if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: 'output', data: text }));
+                      }
+                    });
+
+                    stream.on('close', () => {
+                      console.log('[Shell] Remote shell closed for host:', remoteHostId);
+                      if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: 'exit', exitCode: 0 }));
+                      }
+                      ptySessionsMap.delete(remoteSessionKey);
+                    });
+
+                    stream.on('error', (streamErr) => {
+                      console.error('[Shell] Remote stream error:', streamErr.message);
+                    });
+
+                    // Cache the session
+                    ptySessionsMap.set(remoteSessionKey, {
+                      process: shellProcess,
+                      pty: shellProcess,
+                      outputBuffer,
+                      lastActivity: Date.now(),
+                      ws,
+                      projectPath: data.projectPath || '',
+                      isRemote: true,
+                      hostId: remoteHostId,
+                      stream,
+                      timeoutId: null,
+                    });
+
+                    // Send ready signal
+                    ws.send(JSON.stringify({ type: 'ready' }));
+                  });
+
+                  return; // Skip local PTY logic
+                }
+
                 // Login commands (Claude/Cursor auth) should never reuse cached sessions
                 const isLoginCommand = initialCommand && (
                     initialCommand.includes('setup-token') ||
@@ -2026,6 +2150,10 @@ function handleShellConnection(ws) {
 
                 session.timeoutId = setTimeout(() => {
                     console.log('⏰ PTY session timeout, killing process:', ptySessionKey);
+                    // When cleaning up expired sessions, also close remote streams
+                    if (session.isRemote && session.stream) {
+                        session.stream.close();
+                    }
                     if (session.pty && session.pty.kill) {
                         session.pty.kill();
                     }

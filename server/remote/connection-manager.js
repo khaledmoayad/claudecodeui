@@ -85,6 +85,16 @@ export class SSHConnectionManager extends EventEmitter {
     this._intentionalDisconnect = false;
   }
 
+  /**
+   * Raw ssh2 Client for creating shell/sftp channels.
+   * Shell channels are independent from the daemon's exec channel --
+   * SSH multiplexes multiple channels over one connection.
+   * @returns {object|null} ssh2 Client instance, or null if not connected
+   */
+  get client() {
+    return this._client || null;
+  }
+
   /** @returns {string} Current connection state */
   get state() {
     return this._state;
