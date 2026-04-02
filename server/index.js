@@ -68,6 +68,7 @@ import pluginsRoutes from './routes/plugins.js';
 import messagesRoutes from './routes/messages.js';
 import remoteHostsRoutes from './routes/remote-hosts.js';
 import remoteConnectionRoutes from './routes/remote-connections.js';
+import { getOperationsForProject } from './remote/operations.js';
 import { createNormalizedMessage } from './providers/types.js';
 import { startEnabledPluginServers, stopAllPlugins, getPluginPort } from './utils/plugin-process-manager.js';
 import { initializeDatabase, sessionNamesDb, applyCustomSessionNames } from './database/db.js';
@@ -786,27 +787,31 @@ app.get('/api/projects/:projectName/file', authenticateToken, async (req, res) =
         const { projectName } = req.params;
         const { filePath } = req.query;
 
-
-        // Security: ensure the requested path is inside the project root
         if (!filePath) {
             return res.status(400).json({ error: 'Invalid file path' });
         }
 
-        const projectRoot = await extractProjectDirectory(projectName).catch(() => null);
-        if (!projectRoot) {
+        const { ops, projectRoot, isRemote } = await getOperationsForProject(projectName).catch(() => ({ ops: null }));
+        if (!ops) {
             return res.status(404).json({ error: 'Project not found' });
         }
 
-        // Handle both absolute and relative paths
-        const resolved = path.isAbsolute(filePath)
-            ? path.resolve(filePath)
-            : path.resolve(projectRoot, filePath);
-        const normalizedRoot = path.resolve(projectRoot) + path.sep;
-        if (!resolved.startsWith(normalizedRoot)) {
-            return res.status(403).json({ error: 'Path must be under project root' });
+        let resolved;
+        if (isRemote) {
+            // Remote: send path as-is to daemon (daemon validates)
+            resolved = filePath;
+        } else {
+            // Local: validate path is within project root
+            resolved = path.isAbsolute(filePath)
+                ? path.resolve(filePath)
+                : path.resolve(projectRoot, filePath);
+            const normalizedRoot = path.resolve(projectRoot) + path.sep;
+            if (!resolved.startsWith(normalizedRoot)) {
+                return res.status(403).json({ error: 'Path must be under project root' });
+            }
         }
 
-        const content = await fsPromises.readFile(resolved, 'utf8');
+        const content = await ops.readFile(resolved);
         res.json({ content, path: resolved });
     } catch (error) {
         console.error('Error reading file:', error);
@@ -826,15 +831,18 @@ app.get('/api/projects/:projectName/files/content', authenticateToken, async (re
         const { projectName } = req.params;
         const { path: filePath } = req.query;
 
-
-        // Security: ensure the requested path is inside the project root
         if (!filePath) {
             return res.status(400).json({ error: 'Invalid file path' });
         }
 
-        const projectRoot = await extractProjectDirectory(projectName).catch(() => null);
-        if (!projectRoot) {
+        const { ops, projectRoot, isRemote } = await getOperationsForProject(projectName).catch(() => ({ ops: null }));
+        if (!ops) {
             return res.status(404).json({ error: 'Project not found' });
+        }
+
+        // Binary streaming over JSON-RPC is deferred for remote projects
+        if (isRemote) {
+            return res.status(501).json({ error: 'Binary file preview not available for remote projects' });
         }
 
         const resolved = path.resolve(filePath);
@@ -879,8 +887,6 @@ app.put('/api/projects/:projectName/file', authenticateToken, async (req, res) =
         const { projectName } = req.params;
         const { filePath, content } = req.body;
 
-
-        // Security: ensure the requested path is inside the project root
         if (!filePath) {
             return res.status(400).json({ error: 'Invalid file path' });
         }
@@ -889,22 +895,27 @@ app.put('/api/projects/:projectName/file', authenticateToken, async (req, res) =
             return res.status(400).json({ error: 'Content is required' });
         }
 
-        const projectRoot = await extractProjectDirectory(projectName).catch(() => null);
-        if (!projectRoot) {
+        const { ops, projectRoot, isRemote } = await getOperationsForProject(projectName).catch(() => ({ ops: null }));
+        if (!ops) {
             return res.status(404).json({ error: 'Project not found' });
         }
 
-        // Handle both absolute and relative paths
-        const resolved = path.isAbsolute(filePath)
-            ? path.resolve(filePath)
-            : path.resolve(projectRoot, filePath);
-        const normalizedRoot = path.resolve(projectRoot) + path.sep;
-        if (!resolved.startsWith(normalizedRoot)) {
-            return res.status(403).json({ error: 'Path must be under project root' });
+        let resolved;
+        if (isRemote) {
+            // Remote: send path as-is to daemon (daemon validates)
+            resolved = filePath;
+        } else {
+            // Local: validate path is within project root
+            resolved = path.isAbsolute(filePath)
+                ? path.resolve(filePath)
+                : path.resolve(projectRoot, filePath);
+            const normalizedRoot = path.resolve(projectRoot) + path.sep;
+            if (!resolved.startsWith(normalizedRoot)) {
+                return res.status(403).json({ error: 'Path must be under project root' });
+            }
         }
 
-        // Write the new content
-        await fsPromises.writeFile(resolved, content, 'utf8');
+        await ops.writeFile(resolved, content);
 
         res.json({
             success: true,
@@ -925,27 +936,20 @@ app.put('/api/projects/:projectName/file', authenticateToken, async (req, res) =
 
 app.get('/api/projects/:projectName/files', authenticateToken, async (req, res) => {
     try {
-
-        // Using fsPromises from import
-
-        // Use extractProjectDirectory to get the actual project path
-        let actualPath;
-        try {
-            actualPath = await extractProjectDirectory(req.params.projectName);
-        } catch (error) {
-            console.error('Error extracting project directory:', error);
-            // Fallback to simple dash replacement
-            actualPath = req.params.projectName.replace(/-/g, '/');
+        const { ops, projectRoot } = await getOperationsForProject(req.params.projectName).catch(() => ({ ops: null }));
+        if (!ops) {
+            // Fallback for backward compat: try dash replacement
+            let actualPath = req.params.projectName.replace(/-/g, '/');
+            try {
+                await fsPromises.access(actualPath);
+            } catch {
+                return res.status(404).json({ error: `Project path not found: ${actualPath}` });
+            }
+            const files = await getFileTree(actualPath, 10, 0, true);
+            return res.json(files);
         }
 
-        // Check if path exists
-        try {
-            await fsPromises.access(actualPath);
-        } catch (e) {
-            return res.status(404).json({ error: `Project path not found: ${actualPath}` });
-        }
-
-        const files = await getFileTree(actualPath, 10, 0, true);
+        const files = await ops.listFiles(projectRoot, { maxDepth: 10, showHidden: true });
         res.json(files);
     } catch (error) {
         console.error('[ERROR] File tree error:', error.message);
@@ -1020,13 +1024,25 @@ app.post('/api/projects/:projectName/files/create', authenticateToken, async (re
             return res.status(400).json({ error: nameValidation.error });
         }
 
-        // Get project root
-        const projectRoot = await extractProjectDirectory(projectName).catch(() => null);
-        if (!projectRoot) {
+        const { ops, projectRoot, isRemote } = await getOperationsForProject(projectName).catch(() => ({ ops: null }));
+        if (!ops) {
             return res.status(404).json({ error: 'Project not found' });
         }
 
-        // Build and validate target path
+        if (isRemote) {
+            // Remote: delegate to daemon (daemon validates paths and handles creation)
+            const resolvedParent = parentPath || projectRoot;
+            const result = await ops.createItem(resolvedParent, name, type);
+            return res.json({
+                success: true,
+                path: result.path,
+                name: result.name,
+                type: result.type,
+                message: `${type === 'file' ? 'File' : 'Directory'} created successfully`
+            });
+        }
+
+        // Local: validate path within project root
         const targetDir = parentPath || '';
         const targetPath = targetDir ? path.join(targetDir, name) : name;
         const validation = validatePathInProject(projectRoot, targetPath);
@@ -1071,6 +1087,8 @@ app.post('/api/projects/:projectName/files/create', authenticateToken, async (re
             res.status(403).json({ error: 'Permission denied' });
         } else if (error.code === 'ENOENT') {
             res.status(404).json({ error: 'Parent directory not found' });
+        } else if (error.code === 'EEXIST') {
+            res.status(409).json({ error: 'Already exists' });
         } else {
             res.status(500).json({ error: error.message });
         }
@@ -1093,13 +1111,24 @@ app.put('/api/projects/:projectName/files/rename', authenticateToken, async (req
             return res.status(400).json({ error: nameValidation.error });
         }
 
-        // Get project root
-        const projectRoot = await extractProjectDirectory(projectName).catch(() => null);
-        if (!projectRoot) {
+        const { ops, projectRoot, isRemote } = await getOperationsForProject(projectName).catch(() => ({ ops: null }));
+        if (!ops) {
             return res.status(404).json({ error: 'Project not found' });
         }
 
-        // Validate old path
+        if (isRemote) {
+            // Remote: delegate to daemon (daemon validates paths)
+            const result = await ops.renameItem(oldPath, newName);
+            return res.json({
+                success: true,
+                oldPath: result.oldPath,
+                newPath: result.newPath,
+                newName: result.newName,
+                message: 'Renamed successfully'
+            });
+        }
+
+        // Local: validate paths within project root
         const oldValidation = validatePathInProject(projectRoot, oldPath);
         if (!oldValidation.valid) {
             return res.status(403).json({ error: oldValidation.error });
@@ -1165,13 +1194,23 @@ app.delete('/api/projects/:projectName/files', authenticateToken, async (req, re
             return res.status(400).json({ error: 'Path is required' });
         }
 
-        // Get project root
-        const projectRoot = await extractProjectDirectory(projectName).catch(() => null);
-        if (!projectRoot) {
+        const { ops, projectRoot, isRemote } = await getOperationsForProject(projectName).catch(() => ({ ops: null }));
+        if (!ops) {
             return res.status(404).json({ error: 'Project not found' });
         }
 
-        // Validate path
+        if (isRemote) {
+            // Remote: delegate to daemon (daemon handles stat + delete)
+            await ops.deleteItem(targetPath);
+            return res.json({
+                success: true,
+                path: targetPath,
+                type: type || 'file',
+                message: 'Deleted successfully'
+            });
+        }
+
+        // Local: validate path within project root
         const validation = validatePathInProject(projectRoot, targetPath);
         if (!validation.valid) {
             return res.status(403).json({ error: validation.error });
@@ -1260,6 +1299,18 @@ const uploadFilesHandler = async (req, res) => {
         try {
             const { projectName } = req.params;
             const { targetPath, relativePaths } = req.body;
+
+            // File upload not available for remote projects (requires local filesystem)
+            const { isRemote } = await getOperationsForProject(projectName).catch(() => ({}));
+            if (isRemote) {
+                // Clean up temp files from multer
+                if (req.files) {
+                    for (const file of req.files) {
+                        await fsPromises.unlink(file.path).catch(() => {});
+                    }
+                }
+                return res.status(501).json({ error: 'File upload not available for remote projects' });
+            }
 
             // Parse relative paths if provided (for folder uploads)
             let filePaths = [];
