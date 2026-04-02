@@ -67,7 +67,7 @@ import geminiRoutes from './routes/gemini.js';
 import pluginsRoutes from './routes/plugins.js';
 import messagesRoutes from './routes/messages.js';
 import remoteHostsRoutes from './routes/remote-hosts.js';
-import remoteConnectionRoutes from './routes/remote-connections.js';
+import createRemoteConnectionRoutes from './routes/remote-connections.js';
 import { getOperationsForProject } from './remote/operations.js';
 import { getConnection } from './remote/connection-manager.js';
 import { createNormalizedMessage } from './providers/types.js';
@@ -549,6 +549,39 @@ app.use('/api/sessions', authenticateToken, messagesRoutes);
 app.use('/api/remote-hosts', authenticateToken, remoteHostsRoutes);
 
 // Remote SSH connection lifecycle routes (protected)
+// Pass lifecycle hooks so the server can attach reconnection/disconnect handlers
+const remoteConnectionRoutes = createRemoteConnectionRoutes({
+  onConnectionCreated: (mgr, hostId) => {
+    // Re-establish file watchers after SSH reconnection
+    mgr.on('reconnected', async ({ hostId: reconnectedHostId }) => {
+      console.log('[RemoteWatch] Reconnected to', reconnectedHostId, '-- re-establishing watchers');
+      await reestablishRemoteWatches(reconnectedHostId);
+    });
+
+    // Handle connection loss: clean up notification listeners and notify frontend
+    mgr.on('state', ({ state }) => {
+      if (state === 'failed' || state === 'disconnected') {
+        const cleanup = remoteWatchCleanups.get(hostId);
+        if (cleanup) {
+          cleanup();
+          remoteWatchCleanups.delete(hostId);
+        }
+        // Keep remoteWatchedPaths so reconnection can re-establish them
+        // But notify frontend about disconnection
+        const msg = JSON.stringify({
+          type: 'remote_disconnected',
+          hostId,
+          timestamp: new Date().toISOString(),
+        });
+        connectedClients.forEach(client => {
+          if (client.readyState === WebSocket.OPEN) {
+            client.send(msg);
+          }
+        });
+      }
+    });
+  },
+});
 app.use('/api/remote-hosts', authenticateToken, remoteConnectionRoutes);
 
 // Agent API Routes (uses API key authentication)

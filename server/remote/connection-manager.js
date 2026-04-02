@@ -269,9 +269,14 @@ export class SSHConnectionManager extends EventEmitter {
         }
       }
 
-      // 8. READY
+      // 8. READY — detect reconnection before resetting counter
+      const wasReconnection = this._reconnectAttempt > 0;
       this._reconnectAttempt = 0;
       this._setState(CONNECTION_STATES.READY);
+
+      if (wasReconnection) {
+        this.emit('reconnected', { hostId: this._hostConfig.id });
+      }
     } catch (err) {
       this._handleConnectionFailure(err.message);
     }

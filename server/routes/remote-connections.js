@@ -4,7 +4,17 @@ import express from 'express';
 import { createConnection, getConnection, removeConnection, getAllConnections } from '../remote/connection-manager.js';
 import { remoteHostsDb } from '../remote/remote-hosts-db.js';
 
-const router = express.Router();
+/**
+ * Create the remote-connections router.
+ * @param {object} [options]
+ * @param {(mgr: import('../remote/connection-manager.js').SSHConnectionManager, hostId: string) => void} [options.onConnectionCreated]
+ *   Called when a new SSHConnectionManager is created, allowing the caller to
+ *   attach lifecycle event listeners (e.g., reconnected, state).
+ * @returns {express.Router}
+ */
+export default function createRemoteConnectionRoutes(options = {}) {
+  const router = express.Router();
+  const { onConnectionCreated } = options;
 
 // POST /:id/connect — Establish persistent SSH connection
 router.post('/:id/connect', (req, res) => {
@@ -27,6 +37,12 @@ router.post('/:id/connect', (req, res) => {
 
     // Create connection and start lifecycle (fire-and-forget)
     const mgr = createConnection(host);
+
+    // Allow caller to attach lifecycle listeners (reconnected, state events)
+    if (onConnectionCreated) {
+      onConnectionCreated(mgr, host.id);
+    }
+
     mgr.connect().catch((err) => {
       console.error('[remote-connections] Connect error:', err.message);
     });
@@ -99,4 +115,5 @@ router.get('/connections', (req, res) => {
   }
 });
 
-export default router;
+  return router;
+}
