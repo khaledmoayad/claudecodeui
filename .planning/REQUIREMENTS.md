@@ -9,7 +9,7 @@
 
 - [x] **CONN-01**: User can add a remote host with hostname, port, username, and SSH private key path
 - [x] **CONN-02**: User can test SSH connectivity before saving a host configuration
-- [ ] **CONN-03**: User can see connection status (connected, connecting, reconnecting, disconnected, error) on each remote project
+- [x] **CONN-03**: User can see connection status (connected, connecting, reconnecting, disconnected, error) on each remote project
 - [x] **CONN-04**: Dropped SSH connections auto-reconnect with exponential backoff
 - [x] **CONN-05**: User can edit or delete a saved remote host configuration
 - [x] **CONN-06**: SSH connection config is stored in the existing SQLite database
@@ -56,8 +56,8 @@
 
 - [ ] **UI-01**: "Add Remote Project" option appears in the project creation wizard
 - [ ] **UI-02**: Wizard collects SSH config, tests connection, and lets user select a remote directory
-- [ ] **UI-03**: Remote projects appear alongside local projects in the sidebar with a visual distinction
-- [ ] **UI-04**: Taskmaster UI elements are hidden for remote projects
+- [x] **UI-03**: Remote projects appear alongside local projects in the sidebar with a visual distinction
+- [x] **UI-04**: Taskmaster UI elements are hidden for remote projects
 - [x] **UI-05**: All remote-specific UI strings are added to i18n translation files
 
 ### Abstraction
@@ -106,7 +106,7 @@
 |-------------|-------|--------|
 | CONN-01 | Phase 1 | Complete |
 | CONN-02 | Phase 1 | Complete |
-| CONN-03 | Phase 4 | Pending |
+| CONN-03 | Phase 4 | Complete |
 | CONN-04 | Phase 1 | Complete |
 | CONN-05 | Phase 1 | Complete |
 | CONN-06 | Phase 1 | Complete |
@@ -135,8 +135,8 @@
 | CHAT-04 | Phase 3 | Complete |
 | UI-01 | Phase 4 | Pending |
 | UI-02 | Phase 4 | Pending |
-| UI-03 | Phase 4 | Pending |
-| UI-04 | Phase 4 | Pending |
+| UI-03 | Phase 4 | Complete |
+| UI-04 | Phase 4 | Complete |
 | UI-05 | Phase 4 | Complete |
 | ABS-01 | Phase 2 | Complete |
 | ABS-02 | Phase 2 | Complete |

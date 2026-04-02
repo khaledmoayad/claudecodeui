@@ -85,9 +85,9 @@ Plans:
 **UI hint**: yes
 
 Plans:
-- [ ] 04-01-PLAN.md — Remote utilities, wizard types, API methods, server endpoints, and i18n translations
+- [x] 04-01-PLAN.md — Remote utilities, wizard types, API methods, server endpoints, and i18n translations
 - [ ] 04-02-PLAN.md — Project creation wizard remote flow (SSH config, test, directory picker)
-- [ ] 04-03-PLAN.md — Sidebar remote indicators and TaskMaster hiding
+- [x] 04-03-PLAN.md — Sidebar remote indicators and TaskMaster hiding
 
 ## Progress
 
