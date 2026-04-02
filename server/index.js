@@ -1044,6 +1044,7 @@ app.post('/api/projects/:projectName/files/create', authenticateToken, async (re
         }
 
         // Local: validate path within project root
+        const resolvedParent = parentPath || projectRoot;
         const targetDir = parentPath || '';
         const targetPath = targetDir ? path.join(targetDir, name) : name;
         const validation = validatePathInProject(projectRoot, targetPath);
@@ -1051,35 +1052,22 @@ app.post('/api/projects/:projectName/files/create', authenticateToken, async (re
             return res.status(403).json({ error: validation.error });
         }
 
-        const resolvedPath = validation.resolved;
-
         // Check if already exists
         try {
-            await fsPromises.access(resolvedPath);
+            await fsPromises.access(validation.resolved);
             return res.status(409).json({ error: `${type === 'file' ? 'File' : 'Directory'} already exists` });
         } catch {
             // Doesn't exist, which is what we want
         }
 
-        // Create file or directory
-        if (type === 'directory') {
-            await fsPromises.mkdir(resolvedPath, { recursive: false });
-        } else {
-            // Ensure parent directory exists
-            const parentDir = path.dirname(resolvedPath);
-            try {
-                await fsPromises.access(parentDir);
-            } catch {
-                await fsPromises.mkdir(parentDir, { recursive: true });
-            }
-            await fsPromises.writeFile(resolvedPath, '', 'utf8');
-        }
+        // Delegate to ProjectOperations
+        const result = await ops.createItem(resolvedParent, name, type);
 
         res.json({
             success: true,
-            path: resolvedPath,
-            name,
-            type,
+            path: result.path,
+            name: result.name,
+            type: result.type,
             message: `${type === 'file' ? 'File' : 'Directory'} created successfully`
         });
     } catch (error) {
@@ -1160,14 +1148,14 @@ app.put('/api/projects/:projectName/files/rename', authenticateToken, async (req
             // Doesn't exist, which is what we want
         }
 
-        // Rename
-        await fsPromises.rename(resolvedOldPath, resolvedNewPath);
+        // Delegate to ProjectOperations
+        const result = await ops.renameItem(resolvedOldPath, newName);
 
         res.json({
             success: true,
-            oldPath: resolvedOldPath,
-            newPath: resolvedNewPath,
-            newName,
+            oldPath: result.oldPath,
+            newPath: result.newPath,
+            newName: result.newName,
             message: 'Renamed successfully'
         });
     } catch (error) {
@@ -1219,7 +1207,7 @@ app.delete('/api/projects/:projectName/files', authenticateToken, async (req, re
 
         const resolvedPath = validation.resolved;
 
-        // Check if path exists and get stats
+        // Check if path exists
         let stats;
         try {
             stats = await fsPromises.stat(resolvedPath);
@@ -1232,12 +1220,8 @@ app.delete('/api/projects/:projectName/files', authenticateToken, async (req, re
             return res.status(403).json({ error: 'Cannot delete project root directory' });
         }
 
-        // Delete based on type
-        if (stats.isDirectory()) {
-            await fsPromises.rm(resolvedPath, { recursive: true, force: true });
-        } else {
-            await fsPromises.unlink(resolvedPath);
-        }
+        // Delegate to ProjectOperations
+        await ops.deleteItem(resolvedPath);
 
         res.json({
             success: true,
