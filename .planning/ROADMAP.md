@@ -32,10 +32,10 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans:** 4 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — Database schema, constants, host CRUD REST API with connectivity test
-- [ ] 01-02-PLAN.md — Daemon (ccud) skeleton with JSON-RPC transport and esbuild bundle pipeline
-- [ ] 01-03-PLAN.md — Server-side SSHTransport framing and SFTP daemon deployer
-- [ ] 01-04-PLAN.md — Connection manager state machine with reconnection and lifecycle orchestration
+- [x] 01-01-PLAN.md — Database schema, constants, host CRUD REST API with connectivity test
+- [x] 01-02-PLAN.md — Daemon (ccud) skeleton with JSON-RPC transport and esbuild bundle pipeline
+- [x] 01-03-PLAN.md — Server-side SSHTransport framing and SFTP daemon deployer
+- [x] 01-04-PLAN.md — Connection manager state machine with reconnection and lifecycle orchestration
 
 ### Phase 2: Abstraction & Core Remote Operations
 **Goal**: Existing local project features continue working unchanged, and remote file browsing, file editing, and terminal sessions work through the same ProjectOperations code paths
@@ -46,11 +46,13 @@ Plans:
   2. A remote project's file tree can be browsed, and files can be opened, edited, saved, created, renamed, and deleted through the same UI code paths as local
   3. A remote terminal session with full PTY support can be opened, resized, and multiple simultaneous sessions maintained
   4. The ProjectOperations interface cleanly abstracts local vs remote for filesystem, git, and terminal operations, with async-first design and proper error handling
-**Plans**: TBD
+**Plans:** 4 plans
 
 Plans:
-- [ ] 02-01: TBD
-- [ ] 02-02: TBD
+- [ ] 02-01-PLAN.md — ProjectOperations interface, LocalOperations, and project-resolver
+- [ ] 02-02-PLAN.md — Daemon filesystem handler implementation (all 8 RPC methods)
+- [ ] 02-03-PLAN.md — RemoteOperations + route migration to ProjectOperations
+- [ ] 02-04-PLAN.md — Remote terminal via ssh2 shell channels
 
 ### Phase 3: Full Feature Parity
 **Goal**: Remote projects have complete feature parity with local projects -- git panel, AI chat, file watching, and resilient reconnection all work over SSH
@@ -90,7 +92,7 @@ Phases execute in numeric order: 1 > 2 > 3 > 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Protocol & Connection Foundation | 0/4 | Planning complete | - |
-| 2. Abstraction & Core Remote Operations | 0/0 | Not started | - |
+| 1. Protocol & Connection Foundation | 4/4 | Complete | 2026-04-02 |
+| 2. Abstraction & Core Remote Operations | 0/4 | In Progress | - |
 | 3. Full Feature Parity | 0/0 | Not started | - |
 | 4. Frontend Integration | 0/0 | Not started | - |
