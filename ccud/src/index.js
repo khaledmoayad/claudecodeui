@@ -9,6 +9,7 @@ import { writePidFile, removePidFile } from './pid.js';
 import { createStdioTransport } from './transport.js';
 import { handleInitialize } from './handlers/initialize.js';
 import { handleFs } from './handlers/fs.js';
+import { handleWatch, cleanupAllWatchers } from './handlers/watch.js';
 
 // Write PID file immediately
 writePidFile();
@@ -36,6 +37,13 @@ async function processSingleMessage(msg) {
       errorResult = fsResult.error;
     } else {
       result = fsResult;
+    }
+  } else if (msg.method.startsWith('watch/')) {
+    const watchResult = await handleWatch(msg.method, msg.params, transport);
+    if (watchResult.error) {
+      errorResult = watchResult.error;
+    } else {
+      result = watchResult;
     }
   } else {
     errorResult = { code: -32601, message: 'Method not found' };
@@ -75,6 +83,7 @@ let cleanedUp = false;
 function cleanup() {
   if (cleanedUp) return;
   cleanedUp = true;
+  cleanupAllWatchers();
   removePidFile();
   try {
     // Attempt to kill process group for child process cleanup
