@@ -1,8 +1,11 @@
 import { useCallback, useMemo, useState } from 'react';
 import { FolderPlus, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { api } from '../../utils/api';
 import ErrorBanner from './components/ErrorBanner';
 import StepConfiguration from './components/StepConfiguration';
+import StepRemoteConfiguration from './components/StepRemoteConfiguration';
+import StepRemoteDirectoryPicker from './components/StepRemoteDirectoryPicker';
 import StepReview from './components/StepReview';
 import StepTypeSelection from './components/StepTypeSelection';
 import WizardFooter from './components/WizardFooter';
@@ -44,6 +47,8 @@ export default function ProjectCreationWizard({
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cloneProgress, setCloneProgress] = useState('');
+  const [isTesting, setIsTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; error?: string } | null>(null);
 
   const shouldLoadTokens =
     step === 2 && shouldShowGithubAuthentication(formState.workspaceType, formState.githubUrl);
@@ -78,7 +83,37 @@ export default function ProjectCreationWizard({
     [updateField],
   );
 
-  const handleNext = useCallback(() => {
+  const handleTestConnection = useCallback(async () => {
+    setIsTesting(true);
+    setTestResult(null);
+
+    try {
+      const response = await api.remoteHosts.test({
+        name: formState.remoteHostName,
+        hostname: formState.remoteHostname,
+        port: formState.remotePort,
+        username: formState.remoteUsername,
+        privateKeyPath: formState.remotePrivateKeyPath,
+      });
+
+      const body = await response.json();
+
+      if (response.ok && body.success) {
+        setTestResult({ success: true });
+        updateField('remoteConnectionTested', true);
+      } else {
+        setTestResult({ success: false, error: body.error || 'Connection failed' });
+        updateField('remoteConnectionTested', false);
+      }
+    } catch {
+      setTestResult({ success: false, error: 'Connection failed' });
+      updateField('remoteConnectionTested', false);
+    } finally {
+      setIsTesting(false);
+    }
+  }, [formState.remoteHostName, formState.remoteHostname, formState.remotePort, formState.remoteUsername, formState.remotePrivateKeyPath, updateField]);
+
+  const handleNext = useCallback(async () => {
     setError(null);
 
     if (step === 1) {
@@ -91,13 +126,57 @@ export default function ProjectCreationWizard({
     }
 
     if (step === 2) {
+      if (formState.workspaceType === 'remote') {
+        if (!formState.remoteConnectionTested) {
+          setError(t('projectWizard.errors.testConnectionFirst'));
+          return;
+        }
+
+        // Create host and connect before navigating to step 3 (Option A)
+        if (!formState.remoteHostId) {
+          setIsCreating(true);
+          try {
+            const createRes = await api.remoteHosts.create({
+              name: formState.remoteHostName,
+              hostname: formState.remoteHostname,
+              port: formState.remotePort,
+              username: formState.remoteUsername,
+              privateKeyPath: formState.remotePrivateKeyPath,
+            });
+
+            const createBody = await createRes.json();
+            if (!createRes.ok) {
+              setError(createBody.error || t('projectWizard.errors.failedToCreate'));
+              return;
+            }
+
+            const hostId = createBody.id;
+            updateField('remoteHostId', hostId);
+
+            // Connect (fire-and-forget, returns 202)
+            await api.remoteHosts.connect(hostId);
+
+            setStep(3);
+          } catch {
+            setError(t('projectWizard.errors.failedToCreate'));
+          } finally {
+            setIsCreating(false);
+          }
+          return;
+        }
+
+        // Host already exists (user went back from step 3)
+        setStep(3);
+        return;
+      }
+
       if (!formState.workspacePath.trim()) {
         setError(t('projectWizard.errors.providePath'));
         return;
       }
       setStep(3);
     }
-  }, [formState.workspacePath, formState.workspaceType, step, t]);
+  }, [formState.workspacePath, formState.workspaceType, formState.remoteConnectionTested, formState.remoteHostId, formState.remoteHostName, formState.remoteHostname, formState.remotePort, formState.remoteUsername, formState.remotePrivateKeyPath, step, t, updateField]);
 
   const handleBack = useCallback(() => {
     setError(null);
@@ -110,6 +189,27 @@ export default function ProjectCreationWizard({
     setCloneProgress('');
 
     try {
+      // Remote workflow
+      if (formState.workspaceType === 'remote') {
+        if (!formState.remotePath.trim()) {
+          setError(t('projectWizard.errors.selectRemoteDirectory'));
+          setIsCreating(false);
+          return;
+        }
+
+        const hostId = formState.remoteHostId;
+        const addRes = await api.remoteHosts.addProject(hostId, formState.remotePath);
+        const addBody = await addRes.json();
+
+        if (!addRes.ok || !addBody.success) {
+          throw new Error(addBody.error || t('projectWizard.errors.failedToAddRemoteProject'));
+        }
+
+        onProjectCreated?.(addBody.project);
+        onClose();
+        return;
+      }
+
       const shouldCloneRepository = isCloneWorkflow(formState.workspaceType, formState.githubUrl);
 
       if (shouldCloneRepository) {
@@ -187,7 +287,26 @@ export default function ProjectCreationWizard({
             />
           )}
 
-          {step === 2 && (
+          {step === 2 && formState.workspaceType === 'remote' && (
+            <StepRemoteConfiguration
+              remoteHostName={formState.remoteHostName}
+              onRemoteHostNameChange={(v) => updateField('remoteHostName', v)}
+              remoteHostname={formState.remoteHostname}
+              onRemoteHostnameChange={(v) => updateField('remoteHostname', v)}
+              remotePort={formState.remotePort}
+              onRemotePortChange={(v) => updateField('remotePort', v)}
+              remoteUsername={formState.remoteUsername}
+              onRemoteUsernameChange={(v) => updateField('remoteUsername', v)}
+              remotePrivateKeyPath={formState.remotePrivateKeyPath}
+              onRemotePrivateKeyPathChange={(v) => updateField('remotePrivateKeyPath', v)}
+              remoteConnectionTested={formState.remoteConnectionTested}
+              onTestConnection={handleTestConnection}
+              isTesting={isTesting}
+              testResult={testResult}
+            />
+          )}
+
+          {step === 2 && formState.workspaceType !== 'remote' && (
             <StepConfiguration
               workspaceType={formState.workspaceType}
               workspacePath={formState.workspacePath}
@@ -212,7 +331,17 @@ export default function ProjectCreationWizard({
             />
           )}
 
-          {step === 3 && (
+          {step === 3 && formState.workspaceType === 'remote' && (
+            <StepRemoteDirectoryPicker
+              hostId={formState.remoteHostId}
+              remotePath={formState.remotePath}
+              onRemotePathChange={(path) => updateField('remotePath', path)}
+              remoteHostName={formState.remoteHostName}
+              remoteHostname={formState.remoteHostname}
+            />
+          )}
+
+          {step === 3 && formState.workspaceType !== 'remote' && (
             <StepReview
               formState={formState}
               selectedTokenName={selectedTokenName}
