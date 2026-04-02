@@ -1518,6 +1518,195 @@ class WebSocketWriter {
     }
 }
 
+/**
+ * Translate a Claude CLI stream-json event to NormalizedMessage array.
+ * @param {object} event - Event from Claude CLI stdout
+ * @param {string} sessionId - Session identifier
+ * @returns {Array} Array of NormalizedMessage objects
+ */
+function translateClaudeCliEvent(event, sessionId) {
+    if (!event) return [];
+
+    // Handle exit event
+    if (event.type === 'exit') {
+        return [createNormalizedMessage({
+            kind: 'complete',
+            exitCode: event.code || 0,
+            sessionId,
+            provider: 'claude',
+        })];
+    }
+
+    // Handle raw text (non-JSON output from CLI)
+    if (event.type === 'raw') {
+        return [createNormalizedMessage({
+            kind: 'text',
+            role: 'assistant',
+            content: event.text,
+            sessionId,
+            provider: 'claude',
+        })];
+    }
+
+    // Handle stderr -- relay errors, ignore debug noise
+    if (event.type === 'stderr') {
+        if (event.text && !event.text.includes('Debugger') && !event.text.includes('Warning')) {
+            return [createNormalizedMessage({
+                kind: 'status',
+                text: event.text,
+                sessionId,
+                provider: 'claude',
+            })];
+        }
+        return [];
+    }
+
+    // Handle Claude CLI stream-json structured assistant messages
+    if (event.type === 'assistant' && event.message?.content) {
+        return event.message.content.map(block => {
+            if (block.type === 'text') {
+                return createNormalizedMessage({
+                    kind: 'text',
+                    role: 'assistant',
+                    content: block.text,
+                    sessionId,
+                    provider: 'claude',
+                });
+            }
+            if (block.type === 'tool_use') {
+                return createNormalizedMessage({
+                    kind: 'tool_use',
+                    toolName: block.name,
+                    toolInput: block.input,
+                    toolId: block.id,
+                    sessionId,
+                    provider: 'claude',
+                });
+            }
+            if (block.type === 'thinking') {
+                return createNormalizedMessage({
+                    kind: 'thinking',
+                    content: block.thinking || block.text,
+                    sessionId,
+                    provider: 'claude',
+                });
+            }
+            return null;
+        }).filter(Boolean);
+    }
+
+    // Handle tool_result events
+    if (event.type === 'result' || event.type === 'tool_result') {
+        return [createNormalizedMessage({
+            kind: 'tool_result',
+            toolId: event.tool_use_id,
+            content: typeof event.content === 'string' ? event.content : JSON.stringify(event.content),
+            isError: event.is_error || false,
+            sessionId,
+            provider: 'claude',
+        })];
+    }
+
+    // Handle permission request events from Claude CLI
+    if (event.type === 'permission_request' || event.type === 'tool_permission_request') {
+        return [createNormalizedMessage({
+            kind: 'permission_request',
+            requestId: event.request_id || event.id,
+            toolName: event.tool_name || event.tool,
+            input: event.input,
+            context: event.context,
+            sessionId,
+            provider: 'claude',
+        })];
+    }
+
+    // Handle system/status messages
+    if (event.type === 'system' || event.type === 'status') {
+        return [createNormalizedMessage({
+            kind: 'status',
+            text: event.message || event.text || JSON.stringify(event),
+            sessionId,
+            provider: 'claude',
+        })];
+    }
+
+    return [];
+}
+
+/**
+ * Handle a remote Claude chat command by delegating to the daemon via JSON-RPC.
+ * @param {object} data - WebSocket message data
+ * @param {string} hostId - Remote host identifier
+ * @param {WebSocketWriter} writer - WebSocket writer instance
+ */
+async function handleRemoteClaudeCommand(data, hostId, writer) {
+    const conn = getConnection(hostId);
+    if (!conn || !conn.isReady) {
+        writer.send(createNormalizedMessage({
+            kind: 'error',
+            content: 'Remote host not connected',
+            provider: 'claude',
+        }));
+        return;
+    }
+
+    // Set up notification listener for claude/output events from daemon
+    const cleanup = conn.transport.onNotification((msg) => {
+        if (msg.method !== 'claude/output') return;
+        const { sessionId, event } = msg.params;
+
+        // Translate daemon events to NormalizedMessage format
+        const messages = translateClaudeCliEvent(event, sessionId);
+        for (const normalized of messages) {
+            writer.send(normalized);
+        }
+    });
+
+    try {
+        // Start or resume the remote Claude session
+        const result = await conn.transport.request('claude/start', {
+            cwd: data.options?.projectPath || data.options?.cwd,
+            sessionId: data.options?.sessionId,
+            command: data.command,
+            options: {
+                model: data.options?.model,
+                permissionMode: data.options?.permissionMode,
+            },
+        }, 120000); // 2 minute timeout for claude startup
+
+        if (result.error) {
+            writer.send(createNormalizedMessage({
+                kind: 'error',
+                content: result.error.message || 'Failed to start remote Claude session',
+                provider: 'claude',
+            }));
+            cleanup();
+            return;
+        }
+
+        // Send session_created message
+        writer.send(createNormalizedMessage({
+            kind: 'session_created',
+            newSessionId: result.sessionId,
+            provider: 'claude',
+            sessionId: result.sessionId,
+        }));
+        writer.setSessionId(result.sessionId);
+
+        // Store cleanup function for later (when WebSocket closes or session ends)
+        if (!writer._remoteCleanups) writer._remoteCleanups = [];
+        writer._remoteCleanups.push(cleanup);
+
+    } catch (err) {
+        cleanup();
+        writer.send(createNormalizedMessage({
+            kind: 'error',
+            content: 'Remote Claude session failed: ' + err.message,
+            provider: 'claude',
+        }));
+    }
+}
+
 // Handle chat WebSocket connections
 function handleChatConnection(ws, request) {
     console.log('[INFO] Chat WebSocket connected');
@@ -1537,8 +1726,14 @@ function handleChatConnection(ws, request) {
                 console.log('📁 Project:', data.options?.projectPath || 'Unknown');
                 console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
 
-                // Use Claude Agents SDK
-                await queryClaudeSDK(data.command, data.options, writer);
+                const hostId = data.options?.hostId;
+                if (hostId) {
+                    // Remote Claude session -- delegate to daemon
+                    await handleRemoteClaudeCommand(data, hostId, writer);
+                } else {
+                    // Local Claude session -- existing behavior
+                    await queryClaudeSDK(data.command, data.options, writer);
+                }
             } else if (data.type === 'cursor-command') {
                 console.log('[DEBUG] Cursor message:', data.command || '[Continue/Resume]');
                 console.log('📁 Project:', data.options?.cwd || 'Unknown');
@@ -1570,7 +1765,20 @@ function handleChatConnection(ws, request) {
                 const provider = data.provider || 'claude';
                 let success;
 
-                if (provider === 'cursor') {
+                if (data.hostId) {
+                    // Remote abort -- delegate to daemon
+                    const conn = getConnection(data.hostId);
+                    if (conn?.isReady) {
+                        try {
+                            await conn.transport.request('claude/abort', { sessionId: data.sessionId });
+                            success = true;
+                        } catch {
+                            success = false;
+                        }
+                    } else {
+                        success = false;
+                    }
+                } else if (provider === 'cursor') {
                     success = abortCursorSession(data.sessionId);
                 } else if (provider === 'codex') {
                     success = abortCodexSession(data.sessionId);
@@ -1587,12 +1795,28 @@ function handleChatConnection(ws, request) {
                 // This does not persist permissions; it only resolves the in-flight request,
                 // introduced so the SDK can resume once the user clicks Allow/Deny.
                 if (data.requestId) {
-                    resolveToolApproval(data.requestId, {
-                        allow: Boolean(data.allow),
-                        updatedInput: data.updatedInput,
-                        message: data.message,
-                        rememberEntry: data.rememberEntry
-                    });
+                    if (data.hostId) {
+                        // Remote permission response -- send to daemon
+                        const conn = getConnection(data.hostId);
+                        if (conn?.isReady) {
+                            try {
+                                await conn.transport.request('claude/input', {
+                                    sessionId: data.sessionId,
+                                    text: data.allow ? 'y' : 'n',
+                                });
+                            } catch (err) {
+                                console.error('[ERROR] Remote permission response failed:', err.message);
+                            }
+                        }
+                    } else {
+                        // Local permission response -- existing behavior
+                        resolveToolApproval(data.requestId, {
+                            allow: Boolean(data.allow),
+                            updatedInput: data.updatedInput,
+                            message: data.message,
+                            rememberEntry: data.rememberEntry
+                        });
+                    }
                 }
             } else if (data.type === 'cursor-abort') {
                 console.log('[DEBUG] Abort Cursor session:', data.sessionId);
@@ -1645,6 +1869,18 @@ function handleChatConnection(ws, request) {
                     codex: getActiveCodexSessions(),
                     gemini: getActiveGeminiSessions()
                 };
+                // Include remote sessions if a hostId is specified
+                if (data.hostId) {
+                    const conn = getConnection(data.hostId);
+                    if (conn?.isReady) {
+                        try {
+                            const remoteSessions = await conn.transport.request('claude/list-sessions', {
+                                cwd: data.cwd || data.projectPath,
+                            });
+                            activeSessions.remote = remoteSessions.sessions || [];
+                        } catch { /* ignore */ }
+                    }
+                }
                 writer.send({
                     type: 'active-sessions',
                     sessions: activeSessions
@@ -1663,6 +1899,11 @@ function handleChatConnection(ws, request) {
         console.log('🔌 Chat client disconnected');
         // Remove from connected clients
         connectedClients.delete(ws);
+        // Clean up remote notification listeners
+        if (writer._remoteCleanups) {
+            writer._remoteCleanups.forEach(fn => fn());
+            writer._remoteCleanups = [];
+        }
     });
 }
 
