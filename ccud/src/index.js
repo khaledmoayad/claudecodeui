@@ -11,6 +11,7 @@ import { handleInitialize } from './handlers/initialize.js';
 import { handleFs } from './handlers/fs.js';
 import { handleGit } from './handlers/git.js';
 import { handleWatch, cleanupAllWatchers } from './handlers/watch.js';
+import { handleClaude, cleanupAllClaudeSessions } from './handlers/claude.js';
 
 // Write PID file immediately
 writePidFile();
@@ -53,6 +54,13 @@ async function processSingleMessage(msg) {
     } else {
       result = watchResult;
     }
+  } else if (msg.method.startsWith('claude/')) {
+    const claudeResult = await handleClaude(msg.method, msg.params, transport);
+    if (claudeResult.error) {
+      errorResult = claudeResult.error;
+    } else {
+      result = claudeResult;
+    }
   } else {
     errorResult = { code: -32601, message: 'Method not found' };
   }
@@ -92,6 +100,7 @@ function cleanup() {
   if (cleanedUp) return;
   cleanedUp = true;
   cleanupAllWatchers();
+  cleanupAllClaudeSessions();
   removePidFile();
   try {
     // Attempt to kill process group for child process cleanup
