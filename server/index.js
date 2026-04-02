@@ -103,6 +103,146 @@ let projectsWatcherDebounceTimer = null;
 const connectedClients = new Set();
 let isGetProjectsRunning = false; // Flag to prevent reentrant calls
 
+// ============================================================================
+// REMOTE FILE WATCH RELAY
+// ============================================================================
+
+/** @type {Map<string, Set<string>>} hostId -> Set of watched paths */
+const remoteWatchedPaths = new Map();
+/** @type {Map<string, Function>} hostId -> notification cleanup function */
+const remoteWatchCleanups = new Map();
+
+/**
+ * Start watching a remote project root for file changes via daemon.
+ * Registers a notification listener (once per host) that relays watch/change
+ * events to all connected frontend WebSocket clients.
+ * @param {string} hostId
+ * @param {string} projectRoot
+ */
+function setupRemoteFileWatch(hostId, projectRoot) {
+  const conn = getConnection(hostId);
+  if (!conn || !conn.isReady) return;
+
+  // Track the watched path
+  if (!remoteWatchedPaths.has(hostId)) {
+    remoteWatchedPaths.set(hostId, new Set());
+  }
+  const paths = remoteWatchedPaths.get(hostId);
+  if (paths.has(projectRoot)) return; // Already watching
+  paths.add(projectRoot);
+
+  // Start watching on daemon
+  conn.transport.request('watch/start', {
+    path: projectRoot,
+    options: { depth: 10 },
+  }).catch(err => {
+    console.error('[RemoteWatch] Failed to start watch on', projectRoot, err.message);
+    paths.delete(projectRoot);
+  });
+
+  // Set up notification listener (only once per host)
+  if (!remoteWatchCleanups.has(hostId)) {
+    const cleanup = conn.transport.onNotification((msg) => {
+      if (msg.method !== 'watch/change') return;
+      const { watchPath, events } = msg.params;
+
+      // Broadcast to all connected WebSocket clients
+      const update = JSON.stringify({
+        type: 'file_tree_updated',
+        hostId,
+        projectRoot: watchPath,
+        events,
+        timestamp: new Date().toISOString(),
+      });
+      connectedClients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(update);
+        }
+      });
+    });
+    remoteWatchCleanups.set(hostId, cleanup);
+  }
+}
+
+/**
+ * Stop watching a remote project root.
+ * @param {string} hostId
+ * @param {string} projectRoot
+ */
+function stopRemoteFileWatch(hostId, projectRoot) {
+  const conn = getConnection(hostId);
+  if (conn?.isReady) {
+    conn.transport.request('watch/stop', { path: projectRoot }).catch(() => {});
+  }
+  const paths = remoteWatchedPaths.get(hostId);
+  if (paths) paths.delete(projectRoot);
+}
+
+/**
+ * Re-establish all file watchers for a host after SSH reconnection.
+ * Cleans up old notification listener, creates a new one on the new transport,
+ * re-sends watch/start RPCs for all tracked paths, and broadcasts a
+ * remote_reconnected event to frontend clients.
+ * @param {string} hostId
+ */
+async function reestablishRemoteWatches(hostId) {
+  const paths = remoteWatchedPaths.get(hostId);
+  if (!paths || paths.size === 0) return;
+
+  const conn = getConnection(hostId);
+  if (!conn?.isReady) return;
+
+  // Clean up old notification listener
+  const oldCleanup = remoteWatchCleanups.get(hostId);
+  if (oldCleanup) {
+    oldCleanup();
+    remoteWatchCleanups.delete(hostId);
+  }
+
+  // Set up new notification listener on new transport
+  const cleanup = conn.transport.onNotification((msg) => {
+    if (msg.method !== 'watch/change') return;
+    const { watchPath, events } = msg.params;
+    const update = JSON.stringify({
+      type: 'file_tree_updated',
+      hostId,
+      projectRoot: watchPath,
+      events,
+      timestamp: new Date().toISOString(),
+    });
+    connectedClients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(update);
+      }
+    });
+  });
+  remoteWatchCleanups.set(hostId, cleanup);
+
+  // Re-start watchers on new daemon instance
+  for (const watchPath of paths) {
+    try {
+      await conn.transport.request('watch/start', {
+        path: watchPath,
+        options: { depth: 10 },
+      });
+    } catch (err) {
+      console.error('[RemoteWatch] Failed to re-establish watch on', watchPath, err.message);
+    }
+  }
+
+  // Broadcast refresh event so frontend reloads file trees
+  const refreshMsg = JSON.stringify({
+    type: 'remote_reconnected',
+    hostId,
+    timestamp: new Date().toISOString(),
+  });
+  connectedClients.forEach(client => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(refreshMsg);
+    }
+  });
+}
+
 // Broadcast progress to all connected WebSocket clients
 function broadcastProgress(progress) {
     const message = JSON.stringify({
@@ -937,7 +1077,7 @@ app.put('/api/projects/:projectName/file', authenticateToken, async (req, res) =
 
 app.get('/api/projects/:projectName/files', authenticateToken, async (req, res) => {
     try {
-        const { ops, projectRoot } = await getOperationsForProject(req.params.projectName).catch(() => ({ ops: null }));
+        const { ops, projectRoot, isRemote, hostId } = await getOperationsForProject(req.params.projectName).catch(() => ({ ops: null }));
         if (!ops) {
             // Fallback for backward compat: try dash replacement
             let actualPath = req.params.projectName.replace(/-/g, '/');
@@ -951,6 +1091,12 @@ app.get('/api/projects/:projectName/files', authenticateToken, async (req, res) 
         }
 
         const files = await ops.listFiles(projectRoot, { maxDepth: 10, showHidden: true });
+
+        // Auto-start remote file watching on first file tree load
+        if (isRemote && hostId) {
+            setupRemoteFileWatch(hostId, projectRoot);
+        }
+
         res.json(files);
     } catch (error) {
         console.error('[ERROR] File tree error:', error.message);
