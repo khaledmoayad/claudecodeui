@@ -50,7 +50,7 @@
 - [ ] **CHAT-01**: User can start a Claude Code session on the remote host where the project files live
 - [ ] **CHAT-02**: Remote Claude chat streams messages in the same NormalizedMessage format as local
 - [ ] **CHAT-03**: Remote Claude sessions support the same tool approval flow as local sessions
-- [ ] **CHAT-04**: User can list and resume existing remote Claude sessions
+- [x] **CHAT-04**: User can list and resume existing remote Claude sessions
 
 ### Frontend
 
@@ -132,7 +132,7 @@
 | CHAT-01 | Phase 3 | Pending |
 | CHAT-02 | Phase 3 | Pending |
 | CHAT-03 | Phase 3 | Pending |
-| CHAT-04 | Phase 3 | Pending |
+| CHAT-04 | Phase 3 | Complete |
 | UI-01 | Phase 4 | Pending |
 | UI-02 | Phase 4 | Pending |
 | UI-03 | Phase 4 | Pending |
