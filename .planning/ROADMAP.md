@@ -81,12 +81,13 @@ Plans:
   2. Remote projects appear in the sidebar alongside local projects with a clear visual distinction (icon or badge)
   3. Each remote project shows its connection status (connected, connecting, reconnecting, disconnected, error) and Taskmaster UI elements are hidden
   4. All remote-specific UI strings are present in i18n translation files for all supported languages
-**Plans**: TBD
+**Plans:** 3 plans
 **UI hint**: yes
 
 Plans:
-- [ ] 04-01: TBD
-- [ ] 04-02: TBD
+- [ ] 04-01-PLAN.md — Remote utilities, wizard types, API methods, server endpoints, and i18n translations
+- [ ] 04-02-PLAN.md — Project creation wizard remote flow (SSH config, test, directory picker)
+- [ ] 04-03-PLAN.md — Sidebar remote indicators and TaskMaster hiding
 
 ## Progress
 
@@ -98,4 +99,4 @@ Phases execute in numeric order: 1 > 2 > 3 > 4
 | 1. Protocol & Connection Foundation | 4/4 | Complete | 2026-04-02 |
 | 2. Abstraction & Core Remote Operations | 4/4 | Complete | 2026-04-02 |
 | 3. Full Feature Parity | 0/5 | In Progress | - |
-| 4. Frontend Integration | 0/0 | Not started | - |
+| 4. Frontend Integration | 0/3 | Not started | - |
