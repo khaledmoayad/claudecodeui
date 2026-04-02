@@ -1,6 +1,6 @@
 export type WizardStep = 1 | 2 | 3;
 
-export type WorkspaceType = 'existing' | 'new';
+export type WorkspaceType = 'existing' | 'new' | 'remote';
 
 export type TokenMode = 'stored' | 'new' | 'none';
 
@@ -59,4 +59,12 @@ export type WizardFormState = {
   tokenMode: TokenMode;
   selectedGithubToken: string;
   newGithubToken: string;
+  remoteHostName: string;
+  remoteHostname: string;
+  remotePort: number;
+  remoteUsername: string;
+  remotePrivateKeyPath: string;
+  remoteHostId: string;
+  remoteConnectionTested: boolean;
+  remotePath: string;
 };

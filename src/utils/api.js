@@ -193,6 +193,31 @@ export const api = {
       }),
   },
 
+  // Remote host endpoints
+  remoteHosts: {
+    list: () => authenticatedFetch('/api/remote-hosts'),
+    create: (config) => authenticatedFetch('/api/remote-hosts', {
+      method: 'POST',
+      body: JSON.stringify(config),
+    }),
+    test: (config) => authenticatedFetch('/api/remote-hosts/test', {
+      method: 'POST',
+      body: JSON.stringify(config),
+    }),
+    connect: (hostId) => authenticatedFetch(`/api/remote-hosts/${hostId}/connect`, {
+      method: 'POST',
+    }),
+    status: (hostId) => authenticatedFetch(`/api/remote-hosts/${hostId}/status`),
+    disconnect: (hostId) => authenticatedFetch(`/api/remote-hosts/${hostId}/disconnect`, {
+      method: 'POST',
+    }),
+    browse: (hostId, path) => authenticatedFetch(`/api/remote-hosts/${hostId}/browse?path=${encodeURIComponent(path)}`),
+    addProject: (hostId, remotePath) => authenticatedFetch(`/api/remote-hosts/${hostId}/add-project`, {
+      method: 'POST',
+      body: JSON.stringify({ remotePath }),
+    }),
+  },
+
   // Browse filesystem for project suggestions
   browseFilesystem: (dirPath = null) => {
     const params = new URLSearchParams();

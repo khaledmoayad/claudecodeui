@@ -24,6 +24,14 @@ const initialFormState: WizardFormState = {
   tokenMode: 'stored',
   selectedGithubToken: '',
   newGithubToken: '',
+  remoteHostName: '',
+  remoteHostname: '',
+  remotePort: 22,
+  remoteUsername: '',
+  remotePrivateKeyPath: '',
+  remoteHostId: '',
+  remoteConnectionTested: false,
+  remotePath: '',
 };
 
 export default function ProjectCreationWizard({
