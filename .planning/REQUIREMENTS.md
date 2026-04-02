@@ -29,7 +29,7 @@
 - [x] **FS-02**: User can open and read remote files in the existing CodeMirror editor
 - [x] **FS-03**: User can edit and save remote files
 - [x] **FS-04**: User can create, rename, and delete remote files and directories
-- [ ] **FS-05**: Remote file tree auto-updates when files change on the remote host (file watching)
+- [x] **FS-05**: Remote file tree auto-updates when files change on the remote host (file watching)
 
 ### Terminal
 
@@ -65,8 +65,8 @@
 - [x] **ABS-01**: ProjectOperations interface abstracts local vs remote for filesystem operations
 - [x] **ABS-02**: ProjectOperations interface abstracts local vs remote for git operations
 - [x] **ABS-03**: ProjectOperations interface abstracts local vs remote for terminal/PTY spawning
-- [ ] **ABS-04**: All existing routes use ProjectOperations instead of direct fs/spawn calls
-- [ ] **ABS-05**: Existing local project functionality is completely unchanged
+- [x] **ABS-04**: All existing routes use ProjectOperations instead of direct fs/spawn calls
+- [x] **ABS-05**: Existing local project functionality is completely unchanged
 
 ## v2 Requirements
 
@@ -120,7 +120,7 @@
 | FS-02 | Phase 2 | Complete |
 | FS-03 | Phase 2 | Complete |
 | FS-04 | Phase 2 | Complete |
-| FS-05 | Phase 3 | Pending |
+| FS-05 | Phase 3 | Complete |
 | TERM-01 | Phase 2 | Complete |
 | TERM-02 | Phase 2 | Complete |
 | TERM-03 | Phase 2 | Complete |
@@ -141,8 +141,8 @@
 | ABS-01 | Phase 2 | Complete |
 | ABS-02 | Phase 2 | Complete |
 | ABS-03 | Phase 2 | Complete |
-| ABS-04 | Phase 2 | Pending |
-| ABS-05 | Phase 2 | Pending |
+| ABS-04 | Phase 2 | Complete |
+| ABS-05 | Phase 2 | Complete |
 
 **Coverage:**
 - v1 requirements: 39 total

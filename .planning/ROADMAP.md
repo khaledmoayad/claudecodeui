@@ -51,7 +51,7 @@ Plans:
 Plans:
 - [x] 02-01-PLAN.md — ProjectOperations interface, LocalOperations, and project-resolver
 - [x] 02-02-PLAN.md — Daemon filesystem handler implementation (all 8 RPC methods)
-- [ ] 02-03-PLAN.md — RemoteOperations + route migration to ProjectOperations
+- [x] 02-03-PLAN.md — RemoteOperations + route migration to ProjectOperations
 - [x] 02-04-PLAN.md — Remote terminal via ssh2 shell channels
 
 ### Phase 3: Full Feature Parity
@@ -63,11 +63,14 @@ Plans:
   2. A Claude Code session can be started on the remote host, streaming messages in the same NormalizedMessage format, with the same tool approval flow and session resume as local
   3. Remote file tree auto-updates when files change on the remote host via daemon file watching
   4. After an SSH connection drop, the session reconnects and restores working state (file tree refreshes, terminals reconnect, pending operations recover or fail cleanly)
-**Plans**: TBD
+**Plans:** 5 plans
 
 Plans:
-- [x] 03-01-PLAN.md -- Daemon git/exec handler and shared git parsing utilities
-- [ ] 03-02: TBD
+- [ ] 03-01-PLAN.md — Daemon git/exec handler + shared git parser extraction
+- [x] 03-02-PLAN.md — Daemon file watcher with chokidar + watch RPC methods
+- [ ] 03-03-PLAN.md — LocalOperations/RemoteOperations git methods + route migration
+- [ ] 03-04-PLAN.md — Remote Claude CLI chat via daemon + NormalizedMessage translation
+- [ ] 03-05-PLAN.md — File watch relay to frontend + reconnection state recovery
 
 ### Phase 4: Frontend Integration
 **Goal**: Users can discover, create, and manage remote projects through the UI with clear visual distinction and the same polish as local projects
@@ -93,6 +96,6 @@ Phases execute in numeric order: 1 > 2 > 3 > 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Protocol & Connection Foundation | 4/4 | Complete | 2026-04-02 |
-| 2. Abstraction & Core Remote Operations | 2/4 | In Progress | - |
-| 3. Full Feature Parity | 1/5 | In Progress | - |
+| 2. Abstraction & Core Remote Operations | 4/4 | Complete | 2026-04-02 |
+| 3. Full Feature Parity | 0/5 | In Progress | - |
 | 4. Frontend Integration | 0/0 | Not started | - |

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-01-PLAN.md
-last_updated: "2026-04-02T13:38:15.833Z"
-last_activity: 2026-04-02
+stopped_at: Completed 02-03-PLAN.md
+last_updated: "2026-04-02T13:33:05.951Z"
+last_activity: 2026-04-02 -- Phase 03 execution started
 progress:
   total_phases: 4
-  completed_phases: 0
-  total_plans: 8
-  completed_plans: 3
+  completed_phases: 2
+  total_plans: 13
+  completed_plans: 8
   percent: 25
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-01)
 
 **Core value:** One UI instance manages projects across multiple remote machines with the same UX as local projects.
-**Current focus:** Phase 02 — abstraction-core-remote-operations
+**Current focus:** Phase 03 — full-feature-parity
 
 ## Current Position
 
-Phase: 02 (abstraction-core-remote-operations) — EXECUTING
-Plan: 4 of 4
-Status: Ready to execute
-Last activity: 2026-04-02
+Phase: 03 (full-feature-parity) — EXECUTING
+Plan: 1 of 5
+Status: Executing Phase 03
+Last activity: 2026-04-02 -- Phase 03 execution started
 
 Progress: [##........] 25%
 
@@ -59,7 +59,7 @@ Progress: [##........] 25%
 | Phase 02 P01 | 3min | 2 tasks | 3 files |
 | Phase 02 P02 | 2min | 2 tasks | 2 files |
 | Phase 02 P04 | 3min | 2 tasks | 2 files |
-| Phase 03 P01 | 2min | 2 tasks | 3 files |
+| Phase 02 P03 | 5min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -86,8 +86,9 @@ Recent decisions affecting current work:
 - [Phase 02]: Dynamic import for remote-operations.js in factory to avoid errors before Plan 03
 - [Phase 02]: Remote detection via data.hostId instead of resolveProject -- terminal flow is direct
 - [Phase 02]: Resize argument swap in wrapper: external API (cols, rows) mapped to ssh2 setWindow (rows, cols)
-- [Phase 03]: Used execFile (not exec/spawn) in daemon git handler for safety -- no shell invocation prevents injection
-- [Phase 03]: spawnGit in shared module hardcodes command to git unlike generic spawnAsync in routes -- module is git-specific
+- [Phase 02]: Fixed SSHTransport to propagate JSON-RPC error .code on rejection for proper error code translation in remote operations
+- [Phase 02]: Remote routes skip validatePathInProject; daemon validates paths on remote host
+- [Phase 02]: Binary content and file upload return 501 for remote projects (deferred per research)
 
 ### Pending Todos
 
@@ -101,6 +102,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-02T13:38:15.827Z
-Stopped at: Completed 03-01-PLAN.md
+Last session: 2026-04-02T09:21:57.211Z
+Stopped at: Completed 02-03-PLAN.md
 Resume file: None
