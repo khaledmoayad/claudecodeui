@@ -66,7 +66,7 @@ Plans:
 **Plans**: TBD
 
 Plans:
-- [ ] 03-01: TBD
+- [x] 03-01-PLAN.md -- Daemon git/exec handler and shared git parsing utilities
 - [ ] 03-02: TBD
 
 ### Phase 4: Frontend Integration
@@ -94,5 +94,5 @@ Phases execute in numeric order: 1 > 2 > 3 > 4
 |-------|----------------|--------|-----------|
 | 1. Protocol & Connection Foundation | 4/4 | Complete | 2026-04-02 |
 | 2. Abstraction & Core Remote Operations | 2/4 | In Progress | - |
-| 3. Full Feature Parity | 0/0 | Not started | - |
+| 3. Full Feature Parity | 1/5 | In Progress | - |
 | 4. Frontend Integration | 0/0 | Not started | - |
