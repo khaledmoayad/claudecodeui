@@ -28,7 +28,7 @@
     "server": "node server/index.js",
     "client": "vite",
     "build": "vite build",
-    "build:daemon": "node ccud/build.js",
+    "build:daemon": "cd ccud && npm install --ignore-scripts && cd .. && node ccud/build.js",
     "build:all": "node ccud/build.js && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
