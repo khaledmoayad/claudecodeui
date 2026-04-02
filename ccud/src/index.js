@@ -9,6 +9,7 @@ import { writePidFile, removePidFile } from './pid.js';
 import { createStdioTransport } from './transport.js';
 import { handleInitialize } from './handlers/initialize.js';
 import { handleFs } from './handlers/fs.js';
+import { handleGit } from './handlers/git.js';
 
 // Write PID file immediately
 writePidFile();
@@ -36,6 +37,13 @@ async function processSingleMessage(msg) {
       errorResult = fsResult.error;
     } else {
       result = fsResult;
+    }
+  } else if (msg.method.startsWith('git/')) {
+    const gitResult = await handleGit(msg.method, msg.params);
+    if (gitResult.error) {
+      errorResult = gitResult.error;
+    } else {
+      result = gitResult;
     }
   } else {
     errorResult = { code: -32601, message: 'Method not found' };
