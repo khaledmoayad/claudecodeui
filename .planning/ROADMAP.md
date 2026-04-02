@@ -49,10 +49,10 @@ Plans:
 **Plans:** 4 plans
 
 Plans:
-- [ ] 02-01-PLAN.md — ProjectOperations interface, LocalOperations, and project-resolver
-- [ ] 02-02-PLAN.md — Daemon filesystem handler implementation (all 8 RPC methods)
+- [x] 02-01-PLAN.md — ProjectOperations interface, LocalOperations, and project-resolver
+- [x] 02-02-PLAN.md — Daemon filesystem handler implementation (all 8 RPC methods)
 - [ ] 02-03-PLAN.md — RemoteOperations + route migration to ProjectOperations
-- [ ] 02-04-PLAN.md — Remote terminal via ssh2 shell channels
+- [x] 02-04-PLAN.md — Remote terminal via ssh2 shell channels
 
 ### Phase 3: Full Feature Parity
 **Goal**: Remote projects have complete feature parity with local projects -- git panel, AI chat, file watching, and resilient reconnection all work over SSH
@@ -93,6 +93,6 @@ Phases execute in numeric order: 1 > 2 > 3 > 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Protocol & Connection Foundation | 4/4 | Complete | 2026-04-02 |
-| 2. Abstraction & Core Remote Operations | 0/4 | In Progress | - |
+| 2. Abstraction & Core Remote Operations | 2/4 | In Progress | - |
 | 3. Full Feature Parity | 0/0 | Not started | - |
 | 4. Frontend Integration | 0/0 | Not started | - |
