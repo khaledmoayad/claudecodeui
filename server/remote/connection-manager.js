@@ -226,7 +226,7 @@ export class SSHConnectionManager extends EventEmitter {
       this._setState(CONNECTION_STATES.INITIALIZING);
 
       let channel = await new Promise((resolve, reject) => {
-        this._client.exec('node ~/' + DAEMON_REMOTE_PATH, { env: { TERM: 'dumb' } }, (err, ch) => {
+        this._client.exec('bash -l -c "node ~/' + DAEMON_REMOTE_PATH + '"', { env: { TERM: 'dumb' } }, (err, ch) => {
           if (err) return reject(err);
           resolve(ch);
         });
@@ -249,7 +249,7 @@ export class SSHConnectionManager extends EventEmitter {
         await deployDaemon(this._client, { force: true });
 
         channel = await new Promise((resolve, reject) => {
-          this._client.exec('node ~/' + DAEMON_REMOTE_PATH, { env: { TERM: 'dumb' } }, (err, ch) => {
+          this._client.exec('bash -l -c "node ~/' + DAEMON_REMOTE_PATH + '"', { env: { TERM: 'dumb' } }, (err, ch) => {
             if (err) return reject(err);
             resolve(ch);
           });
