@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Load environment variables before other imports execute
 import './load-env.js';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -1906,8 +1907,13 @@ function ensureRemoteClaudeRelay(hostId) {
         const { sessionId, event } = msg.params || {};
         if (!sessionId || !event) return;
 
+        console.log('[DEBUG] Remote Claude notification:', sessionId, event?.type || 'unknown');
+
         const session = remoteClaudeSessions.get(sessionId);
-        if (!session) return;
+        if (!session) {
+            console.warn('[DEBUG] Remote Claude: no session found for notification, sessionId:', sessionId);
+            return;
+        }
 
         const messages = translateClaudeCliEvent(event, sessionId);
 
@@ -1959,7 +1965,9 @@ async function handleRemoteClaudeCommand(data, hostId, writer) {
     try {
         const { ensureConnection } = await import('./remote/connection-manager.js');
         conn = await ensureConnection(hostId);
+        console.log('[DEBUG] Remote Claude: connection ready for', hostId);
     } catch (connErr) {
+        console.error('[DEBUG] Remote Claude: connection failed:', connErr.message);
         writer.send(createNormalizedMessage({
             kind: 'error',
             content: 'Remote host not connected: ' + connErr.message,
@@ -1969,6 +1977,7 @@ async function handleRemoteClaudeCommand(data, hostId, writer) {
     }
 
     if (!ensureRemoteClaudeRelay(hostId)) {
+        console.error('[DEBUG] Remote Claude: relay not ready for', hostId);
         writer.send(createNormalizedMessage({
             kind: 'error',
             content: 'Remote host transport is not ready',
@@ -1976,6 +1985,7 @@ async function handleRemoteClaudeCommand(data, hostId, writer) {
         }));
         return;
     }
+    console.log('[DEBUG] Remote Claude: relay ready');
 
     try {
         const requestedSessionId = data.options?.sessionId;
@@ -1985,10 +1995,23 @@ async function handleRemoteClaudeCommand(data, hostId, writer) {
             !requestedSessionId.startsWith('new-session-')
         ) ? requestedSessionId : undefined;
 
+        // Generate session ID upfront so we can register BEFORE sending the
+        // request.  The daemon's claude/output notifications may arrive in the
+        // same data chunk as the response — if the session isn't registered yet,
+        // the relay handler silently drops them.
+        const sessionId = resumeSessionId || crypto.randomUUID();
+
+        // Pre-register so the notification relay can find the writer immediately
+        remoteClaudeSessions.set(sessionId, {
+            hostId,
+            writer,
+            startedAt: Date.now(),
+        });
+
         // Start or resume the remote Claude session
         const result = await conn.transport.request('claude/start', {
             cwd: data.options?.projectPath || data.options?.cwd,
-            sessionId: resumeSessionId,
+            sessionId,
             command: data.command,
             options: {
                 model: data.options?.model,
@@ -1996,7 +2019,11 @@ async function handleRemoteClaudeCommand(data, hostId, writer) {
             },
         }, 120000); // 2 minute timeout for claude startup
 
+        console.log('[DEBUG] Remote Claude: claude/start returned:', JSON.stringify(result));
+
         if (result.error) {
+            remoteClaudeSessions.delete(sessionId);
+            console.error('[DEBUG] Remote Claude: daemon error:', result.error.message);
             writer.send(createNormalizedMessage({
                 kind: 'error',
                 content: result.error.message || 'Failed to start remote Claude session',
@@ -2005,11 +2032,7 @@ async function handleRemoteClaudeCommand(data, hostId, writer) {
             return;
         }
 
-        remoteClaudeSessions.set(result.sessionId, {
-            hostId,
-            writer,
-            startedAt: Date.now(),
-        });
+        console.log('[DEBUG] Remote Claude: session started, id:', result.sessionId);
 
         // Send session_created message
         writer.send(createNormalizedMessage({

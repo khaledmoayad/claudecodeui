@@ -459,17 +459,17 @@ export async function ensureConnection(hostId, timeoutMs = 30000) {
       const checkState = () => {
         if (mgr.state === CONNECTION_STATES.READY) {
           clearTimeout(timeout);
-          mgr.removeListener('stateChange', onStateChange);
+          mgr.removeListener('state', onStateChange);
           resolve();
-        } else if (mgr.state === CONNECTION_STATES.ERROR || mgr.state === CONNECTION_STATES.DISCONNECTED) {
+        } else if (mgr.state === CONNECTION_STATES.ERROR || mgr.state === CONNECTION_STATES.DISCONNECTED || mgr.state === CONNECTION_STATES.FAILED) {
           clearTimeout(timeout);
-          mgr.removeListener('stateChange', onStateChange);
+          mgr.removeListener('state', onStateChange);
           reject(new Error(`Connection failed: ${mgr.state}`));
         }
       };
 
       const onStateChange = () => checkState();
-      mgr.on('stateChange', onStateChange);
+      mgr.on('state', onStateChange);
       checkState(); // Check immediately in case state changed between checks
     });
   }
