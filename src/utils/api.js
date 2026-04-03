@@ -212,6 +212,11 @@ export const api = {
       method: 'POST',
     }),
     browse: (hostId, path) => authenticatedFetch(`/api/remote-hosts/${hostId}/browse?path=${encodeURIComponent(path)}`),
+    browseLocal: (dirPath) => {
+      const params = new URLSearchParams();
+      if (dirPath) params.append('path', dirPath);
+      return authenticatedFetch(`/api/remote-hosts/browse-local?${params}`);
+    },
     addProject: (hostId, remotePath) => authenticatedFetch(`/api/remote-hosts/${hostId}/add-project`, {
       method: 'POST',
       body: JSON.stringify({ remotePath }),

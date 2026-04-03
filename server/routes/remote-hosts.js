@@ -5,7 +5,9 @@
 
 import express from 'express';
 import { Client } from 'ssh2';
-import { readFile } from 'fs/promises';
+import { readFile, readdir, stat } from 'fs/promises';
+import { homedir } from 'os';
+import { join, dirname } from 'path';
 import { remoteHostsDb } from '../remote/remote-hosts-db.js';
 import { SSH_READY_TIMEOUT_MS } from '../constants/remote.js';
 
@@ -214,6 +216,47 @@ router.post('/:id/test', async (req, res) => {
   } catch (err) {
     console.error('Failed to test SSH connectivity:', err);
     return res.status(500).json({ error: 'Failed to test SSH connectivity' });
+  }
+});
+
+// GET /browse-local — Browse local filesystem for key file selection
+router.get('/browse-local', async (req, res) => {
+  try {
+    const dirPath = req.query.path || join(homedir(), '.ssh');
+
+    let entries;
+    try {
+      entries = await readdir(dirPath, { withFileTypes: true });
+    } catch (err) {
+      if (err.code === 'ENOENT') {
+        return res.status(404).json({ error: 'Directory not found' });
+      }
+      if (err.code === 'EACCES') {
+        return res.status(403).json({ error: 'Permission denied' });
+      }
+      return res.status(500).json({ error: err.message });
+    }
+
+    const items = entries
+      .filter((e) => !e.name.startsWith('.'))
+      .map((e) => ({
+        name: e.name,
+        path: join(dirPath, e.name),
+        isDirectory: e.isDirectory(),
+      }))
+      .sort((a, b) => {
+        if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+
+    return res.json({
+      currentPath: dirPath,
+      parentPath: dirname(dirPath),
+      items,
+    });
+  } catch (err) {
+    console.error('Failed to browse local filesystem:', err);
+    return res.status(500).json({ error: 'Failed to browse filesystem' });
   }
 });
 
