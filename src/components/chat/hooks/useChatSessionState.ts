@@ -142,6 +142,14 @@ export function useChatSessionState({
   const activeSessionId = selectedSession?.id || currentSessionId || null;
   const [pendingUserMessage, setPendingUserMessage] = useState<ChatMessage | null>(null);
 
+  // Debug: trace active session changes
+  const prevDebugActiveRef = useRef<string | null>(null);
+  if (activeSessionId !== prevDebugActiveRef.current) {
+    console.log('[Session] activeSessionId changed:', prevDebugActiveRef.current, '->', activeSessionId,
+      'selectedSession:', selectedSession?.id, 'currentSessionId:', currentSessionId);
+    prevDebugActiveRef.current = activeSessionId;
+  }
+
   // Tell the store which session we're viewing so it only re-renders for this one
   const prevActiveForStoreRef = useRef<string | null>(null);
   if (activeSessionId !== prevActiveForStoreRef.current) {
@@ -310,6 +318,7 @@ export function useChatSessionState({
   // Main session loading effect — store-based
   useEffect(() => {
     if (!selectedSession || !selectedProject) {
+      console.log('[Session] Cleanup effect: selectedSession=', selectedSession?.id, 'selectedProject=', selectedProject?.name, '-> resetting currentSessionId to null');
       resetStreamingState();
       pendingViewSessionRef.current = null;
       setClaudeStatus(null);
