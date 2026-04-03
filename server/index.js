@@ -1917,6 +1917,11 @@ function ensureRemoteClaudeRelay(hostId) {
 
         const messages = translateClaudeCliEvent(event, sessionId);
 
+        // Send messages with staggered timing to prevent React 18's automatic
+        // batching from merging rapid setLatestMessage calls.  When a 'result'
+        // event produces both 'text' and 'complete', sending them synchronously
+        // causes the client to only see the last one.
+        let delay = 0;
         for (const normalized of messages) {
             if (normalized.kind === 'permission_request' && normalized.requestId) {
                 const pending = remoteClaudePendingPermissions.get(sessionId) || [];
@@ -1941,12 +1946,23 @@ function ensureRemoteClaudeRelay(hostId) {
                 );
             }
 
-            session.writer.send(normalized);
+            if (delay === 0) {
+                session.writer.send(normalized);
+            } else {
+                const msg = normalized;
+                const sess = session;
+                setTimeout(() => sess.writer.send(msg), delay);
+            }
 
             if (normalized.kind === 'complete') {
-                remoteClaudePendingPermissions.delete(sessionId);
-                remoteClaudeSessions.delete(sessionId);
+                const sid = sessionId;
+                setTimeout(() => {
+                    remoteClaudePendingPermissions.delete(sid);
+                    remoteClaudeSessions.delete(sid);
+                }, delay + 10);
             }
+
+            delay += 50;
         }
     });
 
