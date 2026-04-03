@@ -19,7 +19,7 @@ export default function StepTypeSelection({
         {t('projectWizard.step1.question')}
       </h4>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3">
         <button
           onClick={() => onWorkspaceTypeChange('existing')}
           className={`rounded-lg border-2 p-4 text-left transition-all ${

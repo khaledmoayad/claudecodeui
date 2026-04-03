@@ -153,8 +153,26 @@ export default function ProjectCreationWizard({
             const hostId = createBody.id;
             updateField('remoteHostId', hostId);
 
-            // Connect (fire-and-forget, returns 202)
+            // Connect and wait for ready state
             await api.remoteHosts.connect(hostId);
+
+            // Poll until connection is ready (daemon deployed + handshake complete)
+            const maxAttempts = 30;
+            for (let i = 0; i < maxAttempts; i++) {
+              await new Promise((r) => setTimeout(r, 1000));
+              try {
+                const statusRes = await api.remoteHosts.status(hostId);
+                const statusBody = await statusRes.json();
+                if (statusBody.state === 'ready') break;
+                if (statusBody.state === 'error' || statusBody.state === 'disconnected') {
+                  setError(statusBody.error || 'Connection failed after deployment');
+                  setIsCreating(false);
+                  return;
+                }
+              } catch {
+                // Retry on network error
+              }
+            }
 
             setStep(3);
           } catch {
