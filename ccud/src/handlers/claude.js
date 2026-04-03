@@ -89,14 +89,18 @@ export async function handleClaude(method, params, transport) {
 
       // Parse stdout as newline-delimited JSON (stream-json format)
       let buffer = '';
+      let eventCount = 0;
       proc.stdout.on('data', (chunk) => {
-        buffer += chunk.toString();
+        const text = chunk.toString();
+        buffer += text;
         const lines = buffer.split('\n');
         buffer = lines.pop(); // Keep incomplete last line
         for (const line of lines) {
           if (!line.trim()) continue;
+          eventCount++;
           try {
             const event = JSON.parse(line);
+            process.stderr.write(`[ccud] stdout event #${eventCount}: type=${event.type} subtype=${event.subtype || ''}\n`);
             transport.send({
               jsonrpc: '2.0',
               method: 'claude/output',
@@ -104,6 +108,7 @@ export async function handleClaude(method, params, transport) {
             });
           } catch {
             // Non-JSON output -- send as raw text
+            process.stderr.write(`[ccud] stdout raw line #${eventCount}: ${line.substring(0, 80)}\n`);
             transport.send({
               jsonrpc: '2.0',
               method: 'claude/output',
