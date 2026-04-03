@@ -1819,11 +1819,14 @@ function translateClaudeCliEvent(event, sessionId) {
  * @param {WebSocketWriter} writer - WebSocket writer instance
  */
 async function handleRemoteClaudeCommand(data, hostId, writer) {
-    const conn = getConnection(hostId);
-    if (!conn || !conn.isReady) {
+    let conn;
+    try {
+        const { ensureConnection } = await import('./remote/connection-manager.js');
+        conn = await ensureConnection(hostId);
+    } catch (connErr) {
         writer.send(createNormalizedMessage({
             kind: 'error',
-            content: 'Remote host not connected',
+            content: 'Remote host not connected: ' + connErr.message,
             provider: 'claude',
         }));
         return;
@@ -2137,9 +2140,18 @@ function handleShellConnection(ws) {
                     return;
                   }
 
-                  // Get ssh2 client from connection manager
-                  const conn = getConnection(remoteHostId);
-                  if (!conn || !conn.isReady || !conn.client) {
+                  // Get or establish ssh2 connection
+                  let conn;
+                  try {
+                    const { ensureConnection } = await import('./remote/connection-manager.js');
+                    conn = await ensureConnection(remoteHostId);
+                  } catch (connErr) {
+                    console.error('[Shell] Failed to connect to remote host:', connErr.message);
+                    ws.send(JSON.stringify({ type: 'error', error: 'Remote host not connected: ' + connErr.message }));
+                    ws.close();
+                    return;
+                  }
+                  if (!conn.client) {
                     ws.send(JSON.stringify({ type: 'error', error: 'Remote host not connected' }));
                     ws.close();
                     return;

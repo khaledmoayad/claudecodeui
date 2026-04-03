@@ -427,6 +427,57 @@ export function removeConnection(hostId) {
 }
 
 /**
+ * Ensure a connection exists and is ready for a host. Creates and connects if needed.
+ * Waits for the connection to reach 'ready' state before returning.
+ * @param {string} hostId
+ * @param {number} [timeoutMs=30000] - Max time to wait for ready state
+ * @returns {Promise<SSHConnectionManager>}
+ */
+export async function ensureConnection(hostId, timeoutMs = 30000) {
+  let mgr = activeConnections.get(hostId);
+
+  // If already ready, return immediately
+  if (mgr && mgr.state === CONNECTION_STATES.READY) {
+    return mgr;
+  }
+
+  // If not connected at all, create and connect
+  if (!mgr || mgr.state === CONNECTION_STATES.DISCONNECTED || mgr.state === CONNECTION_STATES.ERROR) {
+    const hostConfig = remoteHostsDb.getById(hostId);
+    if (!hostConfig) throw new Error(`Remote host not found: ${hostId}`);
+    mgr = createConnection(hostConfig);
+    mgr.connect();
+  }
+
+  // Wait for ready state
+  if (mgr.state !== CONNECTION_STATES.READY) {
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Connection timeout waiting for ready state'));
+      }, timeoutMs);
+
+      const checkState = () => {
+        if (mgr.state === CONNECTION_STATES.READY) {
+          clearTimeout(timeout);
+          mgr.removeListener('stateChange', onStateChange);
+          resolve();
+        } else if (mgr.state === CONNECTION_STATES.ERROR || mgr.state === CONNECTION_STATES.DISCONNECTED) {
+          clearTimeout(timeout);
+          mgr.removeListener('stateChange', onStateChange);
+          reject(new Error(`Connection failed: ${mgr.state}`));
+        }
+      };
+
+      const onStateChange = () => checkState();
+      mgr.on('stateChange', onStateChange);
+      checkState(); // Check immediately in case state changed between checks
+    });
+  }
+
+  return mgr;
+}
+
+/**
  * Get all active connections.
  * @returns {Map<string, SSHConnectionManager>}
  */

@@ -143,6 +143,16 @@ export async function getOperationsForProject(projectName) {
     return { ops: localOperations, projectRoot: resolved.localPath, isRemote: false };
   }
 
+  // Ensure SSH connection is established before creating remote operations
+  try {
+    const { ensureConnection } = await import('./connection-manager.js');
+    await ensureConnection(resolved.hostId);
+  } catch (err) {
+    const connErr = new Error(`Remote host not connected: ${err.message}`);
+    connErr.code = 'ECONNREFUSED';
+    throw connErr;
+  }
+
   // Dynamic import — remote-operations.js is created in Plan 03.
   try {
     const { createRemoteOperations } = await import('./remote-operations.js');
