@@ -590,6 +590,7 @@ export function useChatComposerState({
       const toolsSettings = getToolsSettings();
       const resolvedProjectPath = selectedProject.fullPath || selectedProject.path || '';
       const sessionSummary = getNotificationSessionSummary(selectedSession, currentInput);
+      const remoteHostId = selectedProject.name?.startsWith('remote:') ? selectedProject.name.split(':')[1] : undefined;
 
       if (provider === 'cursor') {
         sendMessage({
@@ -652,6 +653,7 @@ export function useChatComposerState({
             model: claudeModel,
             sessionSummary,
             images: uploadedImages,
+            ...(remoteHostId && { hostId: remoteHostId }),
           },
         });
       }

@@ -142,6 +142,7 @@ export function useShellConnection({
 
             currentFitAddon.fit();
 
+            const shellHostId = currentProject.name?.startsWith('remote:') ? currentProject.name.split(':')[1] : undefined;
             sendSocketMessage(socket, {
               type: 'init',
               projectPath: currentProject.fullPath || currentProject.path || '',
@@ -152,6 +153,7 @@ export function useShellConnection({
               rows: currentTerminal.rows,
               initialCommand: initialCommandRef.current,
               isPlainShell: isPlainShellRef.current,
+              ...(shellHostId && { hostId: shellHostId }),
             });
           }, TERMINAL_INIT_DELAY_MS);
         };
