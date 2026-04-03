@@ -1822,7 +1822,10 @@ function translateClaudeCliEvent(event, sessionId) {
     // In stream-json mode this can carry the full assistant reply text.
     if (event.type === 'result') {
         const messages = [];
+        console.log('[DEBUG] result event keys:', Object.keys(event), 'has .result:', !!event.result, 'has .message:', !!event.message, 'has .content:', !!event.content);
+        if (event.result) console.log('[DEBUG] event.result type:', typeof event.result, Array.isArray(event.result) ? 'array' : '', typeof event.result === 'object' ? 'keys:' + Object.keys(event.result).join(',') : event.result?.substring?.(0, 200));
         const resultText = extractTextFromClaudePayload(event.result || event.message || event.content);
+        console.log('[DEBUG] extractTextFromClaudePayload returned:', resultText ? resultText.substring(0, 100) : '(empty)');
 
         if (resultText) {
             messages.push(createNormalizedMessage({
