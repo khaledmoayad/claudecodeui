@@ -79,6 +79,8 @@ export class SSHTransport {
    * @param {object} msg - Parsed JSON-RPC message
    */
   _dispatch(msg) {
+    console.log('[SSHTransport] Received:', msg.id !== undefined ? `response id=${msg.id}` : msg.method ? `notification ${msg.method}` : 'unknown', 'pending:', [...this._pendingRequests.keys()]);
+
     if (msg.id !== undefined && this._pendingRequests.has(msg.id)) {
       const pending = this._pendingRequests.get(msg.id);
       clearTimeout(pending.timer);
@@ -118,10 +120,12 @@ export class SSHTransport {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this._pendingRequests.delete(id);
+        console.error('[SSHTransport] RPC timeout for', method, 'id:', id, 'pending:', [...this._pendingRequests.keys()]);
         reject(new Error('RPC timeout: ' + method));
       }, timeoutMs || RPC_DEFAULT_TIMEOUT_MS);
 
       this._pendingRequests.set(id, { resolve, reject, timer });
+      console.log('[SSHTransport] Sending request:', method, 'id:', id);
       this._writable.write(JSON.stringify(request) + '\n');
     });
   }
