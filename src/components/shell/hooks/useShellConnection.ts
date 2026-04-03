@@ -5,6 +5,7 @@ import type { Terminal } from '@xterm/xterm';
 import type { Project, ProjectSession } from '../../../types/app';
 import { TERMINAL_INIT_DELAY_MS } from '../constants/constants';
 import { getShellWebSocketUrl, parseShellMessage, sendSocketMessage } from '../utils/socket';
+import { extractHostId } from '../../../utils/remote';
 
 const ANSI_ESCAPE_REGEX =
   /(?:\u001B\[[0-?]*[ -/]*[@-~]|\u009B[0-?]*[ -/]*[@-~]|\u001B\][^\u0007\u001B]*(?:\u0007|\u001B\\)|\u009D[^\u0007\u009C]*(?:\u0007|\u009C)|\u001B[PX^_][^\u001B]*\u001B\\|[\u0090\u0098\u009E\u009F][^\u009C]*\u009C|\u001B[@-Z\\-_])/g;
@@ -142,7 +143,7 @@ export function useShellConnection({
 
             currentFitAddon.fit();
 
-            const shellHostId = currentProject.name?.startsWith('remote:') ? currentProject.name.split(':')[1] : undefined;
+            const shellHostId = extractHostId(currentProject) || undefined;
             sendSocketMessage(socket, {
               type: 'init',
               projectPath: currentProject.fullPath || currentProject.path || '',

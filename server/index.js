@@ -44,7 +44,7 @@ import pty from 'node-pty';
 import fetch from 'node-fetch';
 import mime from 'mime-types';
 
-import { getProjects, getSessions, renameProject, deleteSession, deleteProject, addProjectManually, extractProjectDirectory, clearProjectDirectoryCache, searchConversations } from './projects.js';
+import { getProjects, getSessions, renameProject, deleteSession, deleteProject, addProjectManually, extractProjectDirectory, clearProjectDirectoryCache, searchConversations, loadProjectConfig } from './projects.js';
 import { queryClaudeSDK, abortClaudeSDKSession, isClaudeSDKSessionActive, getActiveClaudeSDKSessions, resolveToolApproval, getPendingApprovalsForSession, reconnectSessionWriter } from './claude-sdk.js';
 import { spawnCursor, abortCursorSession, isCursorSessionActive, getActiveCursorSessions } from './cursor-cli.js';
 import { queryCodex, abortCodexSession, isCodexSessionActive, getActiveCodexSessions } from './openai-codex.js';
@@ -368,6 +368,64 @@ const app = express();
 const server = http.createServer(app);
 
 const ptySessionsMap = new Map();
+/** @type {Map<string, { hostId: string, writer: WebSocketWriter, startedAt: number }>} */
+const remoteClaudeSessions = new Map();
+/** @type {Map<string, Array<{ requestId: string, toolName: string, input: any, context: any, sessionId: string, receivedAt: Date }>>} */
+const remoteClaudePendingPermissions = new Map();
+/** @type {Map<string, { cleanup: Function, transport: any }>} */
+const remoteClaudeHostRelays = new Map();
+
+async function resolveRemoteHostIdFromProjectPath(projectPath) {
+    if (!projectPath || typeof projectPath !== 'string') {
+        return null;
+    }
+
+    try {
+        const config = await loadProjectConfig();
+        for (const [projectName, projectConfig] of Object.entries(config || {})) {
+            if (!projectConfig?.isRemote) continue;
+
+            if (projectConfig.originalPath !== projectPath) continue;
+
+            if (typeof projectConfig.hostId === 'string' && projectConfig.hostId) {
+                return projectConfig.hostId;
+            }
+
+            if (typeof projectName === 'string' && projectName.startsWith('remote:')) {
+                return projectName.split(':')[1] || null;
+            }
+        }
+    } catch {
+        // Ignore config lookup failures; caller will fall back to local behavior.
+    }
+
+    return null;
+}
+
+function findRemotePermissionSessionByRequestId(requestId) {
+    if (!requestId) return null;
+
+    for (const [sessionId, pendingList] of remoteClaudePendingPermissions.entries()) {
+        if (!Array.isArray(pendingList)) continue;
+        if (pendingList.some((item) => item.requestId === requestId)) {
+            return sessionId;
+        }
+    }
+
+    return null;
+}
+
+function removeRemotePendingPermission(sessionId, requestId) {
+    if (!sessionId || !requestId) return;
+    const pendingList = remoteClaudePendingPermissions.get(sessionId) || [];
+    const next = pendingList.filter((item) => item.requestId !== requestId);
+    if (next.length > 0) {
+        remoteClaudePendingPermissions.set(sessionId, next);
+    } else {
+        remoteClaudePendingPermissions.delete(sessionId);
+    }
+}
+
 const PTY_SESSION_TIMEOUT = 30 * 60 * 1000;
 const SHELL_URL_PARSE_BUFFER_LIMIT = 32768;
 const ANSI_ESCAPE_SEQUENCE_REGEX = /\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1B\\))/g;
@@ -833,87 +891,6 @@ const expandWorkspacePath = (inputPath) => {
     }
     return inputPath;
 };
-
-// Browse filesystem endpoint for project suggestions - uses existing getFileTree
-app.get('/api/browse-filesystem', authenticateToken, async (req, res) => {
-    try {
-        const { path: dirPath } = req.query;
-
-        console.log('[API] Browse filesystem request for path:', dirPath);
-        console.log('[API] WORKSPACES_ROOT is:', WORKSPACES_ROOT);
-        // Default to home directory if no path provided
-        const defaultRoot = WORKSPACES_ROOT;
-        let targetPath = dirPath ? expandWorkspacePath(dirPath) : defaultRoot;
-
-        // Resolve and normalize the path
-        targetPath = path.resolve(targetPath);
-
-        // Security check - ensure path is within allowed workspace root
-        const validation = await validateWorkspacePath(targetPath);
-        if (!validation.valid) {
-            return res.status(403).json({ error: validation.error });
-        }
-        const resolvedPath = validation.resolvedPath || targetPath;
-
-        // Security check - ensure path is accessible
-        try {
-            await fs.promises.access(resolvedPath);
-            const stats = await fs.promises.stat(resolvedPath);
-
-            if (!stats.isDirectory()) {
-                return res.status(400).json({ error: 'Path is not a directory' });
-            }
-        } catch (err) {
-            return res.status(404).json({ error: 'Directory not accessible' });
-        }
-
-        // Use existing getFileTree function with shallow depth (only direct children)
-        const fileTree = await getFileTree(resolvedPath, 1, 0, false); // maxDepth=1, showHidden=false
-
-        // Filter only directories and format for suggestions
-        const directories = fileTree
-            .filter(item => item.type === 'directory')
-            .map(item => ({
-                path: item.path,
-                name: item.name,
-                type: 'directory'
-            }))
-            .sort((a, b) => {
-                const aHidden = a.name.startsWith('.');
-                const bHidden = b.name.startsWith('.');
-                if (aHidden && !bHidden) return 1;
-                if (!aHidden && bHidden) return -1;
-                return a.name.localeCompare(b.name);
-            });
-
-        // Add common directories if browsing home directory
-        const suggestions = [];
-        let resolvedWorkspaceRoot = defaultRoot;
-        try {
-            resolvedWorkspaceRoot = await fsPromises.realpath(defaultRoot);
-        } catch (error) {
-            // Use default root as-is if realpath fails
-        }
-        if (resolvedPath === resolvedWorkspaceRoot) {
-            const commonDirs = ['Desktop', 'Documents', 'Projects', 'Development', 'Dev', 'Code', 'workspace'];
-            const existingCommon = directories.filter(dir => commonDirs.includes(dir.name));
-            const otherDirs = directories.filter(dir => !commonDirs.includes(dir.name));
-
-            suggestions.push(...existingCommon, ...otherDirs);
-        } else {
-            suggestions.push(...directories);
-        }
-
-        res.json({
-            path: resolvedPath,
-            suggestions: suggestions
-        });
-
-    } catch (error) {
-        console.error('Error browsing filesystem:', error);
-        res.status(500).json({ error: 'Failed to browse filesystem' });
-    }
-});
 
 app.post('/api/create-folder', authenticateToken, async (req, res) => {
     try {
@@ -1703,6 +1680,55 @@ class WebSocketWriter {
  * @param {string} sessionId - Session identifier
  * @returns {Array} Array of NormalizedMessage objects
  */
+function extractTextFromClaudePayload(payload) {
+    if (!payload) return '';
+
+    if (typeof payload === 'string') {
+        return payload;
+    }
+
+    if (Array.isArray(payload)) {
+        return payload
+            .map((item) => extractTextFromClaudePayload(item))
+            .filter(Boolean)
+            .join('')
+            .trim();
+    }
+
+    if (typeof payload !== 'object') {
+        return '';
+    }
+
+    if (typeof payload.text === 'string') {
+        return payload.text;
+    }
+
+    if (typeof payload.thinking === 'string') {
+        return payload.thinking;
+    }
+
+    if (payload.type === 'text' && typeof payload.text === 'string') {
+        return payload.text;
+    }
+
+    if (payload.message) {
+        const nestedMessageText = extractTextFromClaudePayload(payload.message);
+        if (nestedMessageText) return nestedMessageText;
+    }
+
+    if (payload.content) {
+        const nestedContentText = extractTextFromClaudePayload(payload.content);
+        if (nestedContentText) return nestedContentText;
+    }
+
+    if (payload.result) {
+        const nestedResultText = extractTextFromClaudePayload(payload.result);
+        if (nestedResultText) return nestedResultText;
+    }
+
+    return '';
+}
+
 function translateClaudeCliEvent(event, sessionId) {
     if (!event) return [];
 
@@ -1740,9 +1766,9 @@ function translateClaudeCliEvent(event, sessionId) {
         return [];
     }
 
-    // Handle Claude CLI stream-json structured assistant messages
-    if (event.type === 'assistant' && event.message?.content) {
-        return event.message.content.map(block => {
+    // Handle Claude CLI structured assistant/message payloads.
+    if ((event.type === 'assistant' || event.type === 'message') && event.message?.content) {
+        const structuredMessages = event.message.content.map(block => {
             if (block.type === 'text') {
                 return createNormalizedMessage({
                     kind: 'text',
@@ -1772,10 +1798,53 @@ function translateClaudeCliEvent(event, sessionId) {
             }
             return null;
         }).filter(Boolean);
+
+        if (structuredMessages.length > 0) {
+            return structuredMessages;
+        }
+
+        const fallbackText = extractTextFromClaudePayload(event.message?.content);
+        if (fallbackText) {
+            return [createNormalizedMessage({
+                kind: 'text',
+                role: 'assistant',
+                content: fallbackText,
+                sessionId,
+                provider: 'claude',
+            })];
+        }
+
+        return [];
+    }
+
+    // Handle final result event from Claude CLI.
+    // In stream-json mode this can carry the full assistant reply text.
+    if (event.type === 'result') {
+        const messages = [];
+        const resultText = extractTextFromClaudePayload(event.result || event.message || event.content);
+
+        if (resultText) {
+            messages.push(createNormalizedMessage({
+                kind: 'text',
+                role: 'assistant',
+                content: resultText,
+                sessionId,
+                provider: 'claude',
+            }));
+        }
+
+        messages.push(createNormalizedMessage({
+            kind: 'complete',
+            exitCode: event.is_error ? 1 : 0,
+            sessionId,
+            provider: 'claude',
+        }));
+
+        return messages;
     }
 
     // Handle tool_result events
-    if (event.type === 'result' || event.type === 'tool_result') {
+    if (event.type === 'tool_result') {
         return [createNormalizedMessage({
             kind: 'tool_result',
             toolId: event.tool_use_id,
@@ -1812,6 +1881,73 @@ function translateClaudeCliEvent(event, sessionId) {
     return [];
 }
 
+function ensureRemoteClaudeRelay(hostId) {
+    const conn = getConnection(hostId);
+    if (!conn?.isReady || !conn.transport) {
+        return false;
+    }
+
+    const existingRelay = remoteClaudeHostRelays.get(hostId);
+    if (existingRelay && existingRelay.transport === conn.transport) {
+        return true;
+    }
+
+    if (existingRelay) {
+        try {
+            existingRelay.cleanup();
+        } catch {
+            // Ignore cleanup failures for stale relays
+        }
+        remoteClaudeHostRelays.delete(hostId);
+    }
+
+    const cleanup = conn.transport.onNotification((msg) => {
+        if (msg.method !== 'claude/output') return;
+        const { sessionId, event } = msg.params || {};
+        if (!sessionId || !event) return;
+
+        const session = remoteClaudeSessions.get(sessionId);
+        if (!session) return;
+
+        const messages = translateClaudeCliEvent(event, sessionId);
+
+        for (const normalized of messages) {
+            if (normalized.kind === 'permission_request' && normalized.requestId) {
+                const pending = remoteClaudePendingPermissions.get(sessionId) || [];
+                if (!pending.some((item) => item.requestId === normalized.requestId)) {
+                    pending.push({
+                        requestId: normalized.requestId,
+                        toolName: normalized.toolName || 'UnknownTool',
+                        input: normalized.input,
+                        context: normalized.context,
+                        sessionId,
+                        receivedAt: new Date(),
+                    });
+                    remoteClaudePendingPermissions.set(sessionId, pending);
+                }
+            }
+
+            if (normalized.kind === 'permission_cancelled' && normalized.requestId) {
+                const pending = remoteClaudePendingPermissions.get(sessionId) || [];
+                remoteClaudePendingPermissions.set(
+                    sessionId,
+                    pending.filter((item) => item.requestId !== normalized.requestId),
+                );
+            }
+
+            session.writer.send(normalized);
+
+            if (normalized.kind === 'complete') {
+                remoteClaudePendingPermissions.delete(sessionId);
+                remoteClaudeSessions.delete(sessionId);
+            }
+        }
+    });
+
+    remoteClaudeHostRelays.set(hostId, { cleanup, transport: conn.transport });
+    return true;
+}
+
 /**
  * Handle a remote Claude chat command by delegating to the daemon via JSON-RPC.
  * @param {object} data - WebSocket message data
@@ -1832,23 +1968,27 @@ async function handleRemoteClaudeCommand(data, hostId, writer) {
         return;
     }
 
-    // Set up notification listener for claude/output events from daemon
-    const cleanup = conn.transport.onNotification((msg) => {
-        if (msg.method !== 'claude/output') return;
-        const { sessionId, event } = msg.params;
-
-        // Translate daemon events to NormalizedMessage format
-        const messages = translateClaudeCliEvent(event, sessionId);
-        for (const normalized of messages) {
-            writer.send(normalized);
-        }
-    });
+    if (!ensureRemoteClaudeRelay(hostId)) {
+        writer.send(createNormalizedMessage({
+            kind: 'error',
+            content: 'Remote host transport is not ready',
+            provider: 'claude',
+        }));
+        return;
+    }
 
     try {
+        const requestedSessionId = data.options?.sessionId;
+        const resumeSessionId = (
+            typeof requestedSessionId === 'string' &&
+            requestedSessionId.trim() &&
+            !requestedSessionId.startsWith('new-session-')
+        ) ? requestedSessionId : undefined;
+
         // Start or resume the remote Claude session
         const result = await conn.transport.request('claude/start', {
             cwd: data.options?.projectPath || data.options?.cwd,
-            sessionId: data.options?.sessionId,
+            sessionId: resumeSessionId,
             command: data.command,
             options: {
                 model: data.options?.model,
@@ -1862,9 +2002,14 @@ async function handleRemoteClaudeCommand(data, hostId, writer) {
                 content: result.error.message || 'Failed to start remote Claude session',
                 provider: 'claude',
             }));
-            cleanup();
             return;
         }
+
+        remoteClaudeSessions.set(result.sessionId, {
+            hostId,
+            writer,
+            startedAt: Date.now(),
+        });
 
         // Send session_created message
         writer.send(createNormalizedMessage({
@@ -1875,12 +2020,7 @@ async function handleRemoteClaudeCommand(data, hostId, writer) {
         }));
         writer.setSessionId(result.sessionId);
 
-        // Store cleanup function for later (when WebSocket closes or session ends)
-        if (!writer._remoteCleanups) writer._remoteCleanups = [];
-        writer._remoteCleanups.push(cleanup);
-
     } catch (err) {
-        cleanup();
         writer.send(createNormalizedMessage({
             kind: 'error',
             content: 'Remote Claude session failed: ' + err.message,
@@ -1908,9 +2048,12 @@ function handleChatConnection(ws, request) {
                 console.log('📁 Project:', data.options?.projectPath || 'Unknown');
                 console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
 
-                const hostId = data.options?.hostId;
+                const hostId = data.options?.hostId || await resolveRemoteHostIdFromProjectPath(data.options?.projectPath || data.options?.cwd);
+                console.log('[DEBUG] Claude route:', hostId ? `remote (${hostId})` : 'local');
                 if (hostId) {
                     // Remote Claude session -- delegate to daemon
+                    if (!data.options) data.options = {};
+                    data.options.hostId = hostId;
                     await handleRemoteClaudeCommand(data, hostId, writer);
                 } else {
                     // Local Claude session -- existing behavior
@@ -1946,13 +2089,16 @@ function handleChatConnection(ws, request) {
                 console.log('[DEBUG] Abort session request:', data.sessionId);
                 const provider = data.provider || 'claude';
                 let success;
+                const remoteHostId = data.hostId || (data.sessionId ? remoteClaudeSessions.get(data.sessionId)?.hostId : null);
 
-                if (data.hostId) {
+                if (remoteHostId) {
                     // Remote abort -- delegate to daemon
-                    const conn = getConnection(data.hostId);
+                    const conn = getConnection(remoteHostId);
                     if (conn?.isReady) {
                         try {
                             await conn.transport.request('claude/abort', { sessionId: data.sessionId });
+                            remoteClaudeSessions.delete(data.sessionId);
+                            remoteClaudePendingPermissions.delete(data.sessionId);
                             success = true;
                         } catch {
                             success = false;
@@ -1977,15 +2123,19 @@ function handleChatConnection(ws, request) {
                 // This does not persist permissions; it only resolves the in-flight request,
                 // introduced so the SDK can resume once the user clicks Allow/Deny.
                 if (data.requestId) {
-                    if (data.hostId) {
+                    const remoteSessionId = data.sessionId || findRemotePermissionSessionByRequestId(data.requestId);
+                    const remoteHostId = data.hostId || (remoteSessionId ? remoteClaudeSessions.get(remoteSessionId)?.hostId : null);
+
+                    if (remoteHostId && remoteSessionId) {
                         // Remote permission response -- send to daemon
-                        const conn = getConnection(data.hostId);
+                        const conn = getConnection(remoteHostId);
                         if (conn?.isReady) {
                             try {
                                 await conn.transport.request('claude/input', {
-                                    sessionId: data.sessionId,
+                                    sessionId: remoteSessionId,
                                     text: data.allow ? 'y' : 'n',
                                 });
+                                removeRemotePendingPermission(remoteSessionId, data.requestId);
                             } catch (err) {
                                 console.error('[ERROR] Remote permission response failed:', err.message);
                             }
@@ -2009,6 +2159,7 @@ function handleChatConnection(ws, request) {
                 const provider = data.provider || 'claude';
                 const sessionId = data.sessionId;
                 let isActive;
+                const remoteHostId = data.hostId || (sessionId ? remoteClaudeSessions.get(sessionId)?.hostId : null);
 
                 if (provider === 'cursor') {
                     isActive = isCursorSessionActive(sessionId);
@@ -2016,6 +2167,14 @@ function handleChatConnection(ws, request) {
                     isActive = isCodexSessionActive(sessionId);
                 } else if (provider === 'gemini') {
                     isActive = isGeminiSessionActive(sessionId);
+                } else if (provider === 'claude' && remoteHostId) {
+                    const remoteSession = remoteClaudeSessions.get(sessionId);
+                    isActive = Boolean(remoteSession && remoteSession.hostId === remoteHostId);
+                    if (isActive) {
+                        remoteSession.writer = writer;
+                        writer.setSessionId(sessionId);
+                        ensureRemoteClaudeRelay(remoteHostId);
+                    }
                 } else {
                     // Use Claude Agents SDK
                     isActive = isClaudeSDKSessionActive(sessionId);
@@ -2035,7 +2194,17 @@ function handleChatConnection(ws, request) {
             } else if (data.type === 'get-pending-permissions') {
                 // Return pending permission requests for a session
                 const sessionId = data.sessionId;
-                if (sessionId && isClaudeSDKSessionActive(sessionId)) {
+                const remoteHostId = data.hostId || (sessionId ? remoteClaudeSessions.get(sessionId)?.hostId : null);
+                if (sessionId && remoteHostId) {
+                    const remoteSession = remoteClaudeSessions.get(sessionId);
+                    if (remoteSession && remoteSession.hostId === remoteHostId) {
+                        writer.send({
+                            type: 'pending-permissions-response',
+                            sessionId,
+                            data: remoteClaudePendingPermissions.get(sessionId) || []
+                        });
+                    }
+                } else if (sessionId && isClaudeSDKSessionActive(sessionId)) {
                     const pending = getPendingApprovalsForSession(sessionId);
                     writer.send({
                         type: 'pending-permissions-response',
@@ -2081,11 +2250,6 @@ function handleChatConnection(ws, request) {
         console.log('🔌 Chat client disconnected');
         // Remove from connected clients
         connectedClients.delete(ws);
-        // Clean up remote notification listeners
-        if (writer._remoteCleanups) {
-            writer._remoteCleanups.forEach(fn => fn());
-            writer._remoteCleanups = [];
-        }
     });
 }
 
@@ -2193,7 +2357,7 @@ function handleShellConnection(ws) {
                     };
 
                     // Data from remote -> client
-                    stream.on('data', (chunk) => {
+                                        stream.on('data', (chunk) => {
                       const text = chunk.toString();
                       outputBuffer += text;
                       if (outputBuffer.length > MAX_BUFFER) {
@@ -2206,15 +2370,19 @@ function handleShellConnection(ws) {
                         session.lastActivity = Date.now();
                       }
 
-                      if (ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: 'output', data: text }));
+                                            // Always route output to the currently attached client socket.
+                                            const targetWs = session?.ws;
+                                            if (targetWs && targetWs.readyState === WebSocket.OPEN) {
+                                                targetWs.send(JSON.stringify({ type: 'output', data: text }));
                       }
                     });
 
                     stream.on('close', () => {
                       console.log('[Shell] Remote shell closed for host:', remoteHostId);
-                      if (ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: 'exit', exitCode: 0 }));
+                                            const session = ptySessionsMap.get(remoteSessionKey);
+                                            const targetWs = session?.ws;
+                                            if (targetWs && targetWs.readyState === WebSocket.OPEN) {
+                                                targetWs.send(JSON.stringify({ type: 'exit', exitCode: 0 }));
                       }
                       ptySessionsMap.delete(remoteSessionKey);
                     });

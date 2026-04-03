@@ -4,12 +4,6 @@ export type WorkspaceType = 'existing' | 'new' | 'remote';
 
 export type TokenMode = 'stored' | 'new' | 'none';
 
-export type FolderSuggestion = {
-  name: string;
-  path: string;
-  type?: string;
-};
-
 export type GithubTokenCredential = {
   id: number;
   credential_name: string;
@@ -19,19 +13,6 @@ export type GithubTokenCredential = {
 export type CredentialsResponse = {
   credentials?: GithubTokenCredential[];
   error?: string;
-};
-
-export type BrowseFilesystemResponse = {
-  path?: string;
-  suggestions?: FolderSuggestion[];
-  error?: string;
-};
-
-export type CreateFolderResponse = {
-  success?: boolean;
-  path?: string;
-  error?: string;
-  details?: string;
 };
 
 export type CreateWorkspacePayload = {

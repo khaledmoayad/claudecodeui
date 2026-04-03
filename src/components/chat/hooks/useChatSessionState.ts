@@ -6,6 +6,7 @@ import type { Project, ProjectSession, SessionProvider } from '../../../types/ap
 import { createCachedDiffCalculator, type DiffCalculator } from '../utils/messageTransforms';
 import { normalizedToChatMessages } from './useChatMessages';
 import type { SessionStore, NormalizedMessage } from '../../../stores/useSessionStore';
+import { extractHostId } from '../../../utils/remote';
 
 const MESSAGES_PER_PAGE = 20;
 const INITIAL_VISIBLE_MESSAGES = 100;
@@ -366,7 +367,13 @@ export function useChatSessionState({
 
     // Check session status
     if (ws) {
-      sendMessage({ type: 'check-session-status', sessionId: selectedSession.id, provider });
+      const remoteHostId = extractHostId(selectedProject) || undefined;
+      sendMessage({
+        type: 'check-session-status',
+        sessionId: selectedSession.id,
+        provider,
+        ...(remoteHostId && { hostId: remoteHostId }),
+      });
     }
 
     lastLoadedSessionKeyRef.current = sessionKey;
