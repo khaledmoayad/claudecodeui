@@ -2044,6 +2044,7 @@ async function handleRemoteClaudeCommand(data, hostId, writer) {
         writer.setSessionId(result.sessionId);
 
     } catch (err) {
+        console.error('[DEBUG] Remote Claude: session error:', err.message);
         writer.send(createNormalizedMessage({
             kind: 'error',
             content: 'Remote Claude session failed: ' + err.message,

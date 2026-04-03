@@ -79,7 +79,7 @@ export class SSHTransport {
    * @param {object} msg - Parsed JSON-RPC message
    */
   _dispatch(msg) {
-    console.log('[SSHTransport] Received:', msg.id !== undefined ? `response id=${msg.id}` : msg.method ? `notification ${msg.method}` : 'unknown', 'pending:', [...this._pendingRequests.keys()]);
+    console.log('[SSHTransport] Received:', msg.id !== undefined ? `response id=${msg.id} ${msg.error ? 'ERROR: ' + msg.error.message : 'OK'}` : msg.method ? `notification ${msg.method}` : 'unknown', 'pending:', [...this._pendingRequests.keys()]);
 
     if (msg.id !== undefined && this._pendingRequests.has(msg.id)) {
       const pending = this._pendingRequests.get(msg.id);
