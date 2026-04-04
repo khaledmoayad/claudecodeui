@@ -1733,14 +1733,26 @@ function extractTextFromClaudePayload(payload) {
 function translateClaudeCliEvent(event, sessionId) {
     if (!event) return [];
 
-    // Handle exit event
+    // Handle exit event — may include accumulatedText as fallback when
+    // individual assistant/message notifications were lost in transit
     if (event.type === 'exit') {
-        return [createNormalizedMessage({
+        const messages = [];
+        if (event.accumulatedText) {
+            messages.push(createNormalizedMessage({
+                kind: 'text',
+                role: 'assistant',
+                content: event.accumulatedText,
+                sessionId,
+                provider: 'claude',
+            }));
+        }
+        messages.push(createNormalizedMessage({
             kind: 'complete',
             exitCode: event.code || 0,
             sessionId,
             provider: 'claude',
-        })];
+        }));
+        return messages;
     }
 
     // Handle raw text (non-JSON output from CLI)
@@ -1822,10 +1834,8 @@ function translateClaudeCliEvent(event, sessionId) {
     // In stream-json mode this can carry the full assistant reply text.
     if (event.type === 'result') {
         const messages = [];
-        console.log('[DEBUG] result event keys:', Object.keys(event), 'has .result:', !!event.result, 'has .message:', !!event.message, 'has .content:', !!event.content);
-        if (event.result) console.log('[DEBUG] event.result type:', typeof event.result, Array.isArray(event.result) ? 'array' : '', typeof event.result === 'object' ? 'keys:' + Object.keys(event.result).join(',') : event.result?.substring?.(0, 200));
+        console.log('[DEBUG] Full result event:', JSON.stringify(event).substring(0, 500));
         const resultText = extractTextFromClaudePayload(event.result || event.message || event.content);
-        console.log('[DEBUG] extractTextFromClaudePayload returned:', resultText ? resultText.substring(0, 100) : '(empty)');
 
         if (resultText) {
             messages.push(createNormalizedMessage({

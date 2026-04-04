@@ -2409,28 +2409,32 @@ async function handleClaude(method, params, transport2) {
         };
       }
       activeSessions.set(sessionId, { process: proc, cwd: params.cwd });
+      let accumulatedText = "";
       let buffer = "";
-      let eventCount = 0;
       proc.stdout.on("data", (chunk) => {
-        const text = chunk.toString();
-        buffer += text;
+        buffer += chunk.toString();
         const lines = buffer.split("\n");
         buffer = lines.pop();
         for (const line of lines) {
           if (!line.trim()) continue;
-          eventCount++;
           try {
             const event = JSON.parse(line);
-            process.stderr.write(`[ccud] stdout event #${eventCount}: type=${event.type} subtype=${event.subtype || ""}
-`);
+            if ((event.type === "assistant" || event.type === "message") && event.message?.content) {
+              for (const block of event.message.content) {
+                if (block.type === "text" && block.text) {
+                  accumulatedText += block.text;
+                }
+              }
+            }
+            if (event.type === "result" && typeof event.result === "string") {
+              if (!accumulatedText) accumulatedText = event.result;
+            }
             transport2.send({
               jsonrpc: "2.0",
               method: "claude/output",
               params: { sessionId, event }
             });
           } catch {
-            process.stderr.write(`[ccud] stdout raw line #${eventCount}: ${line.substring(0, 80)}
-`);
             transport2.send({
               jsonrpc: "2.0",
               method: "claude/output",
@@ -2454,7 +2458,7 @@ async function handleClaude(method, params, transport2) {
         transport2.send({
           jsonrpc: "2.0",
           method: "claude/output",
-          params: { sessionId, event: { type: "exit", code, signal } }
+          params: { sessionId, event: { type: "exit", code, signal, accumulatedText: accumulatedText || null } }
         });
       });
       proc.on("error", (err) => {

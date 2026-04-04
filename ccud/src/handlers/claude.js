@@ -87,20 +87,36 @@ export async function handleClaude(method, params, transport) {
 
       activeSessions.set(sessionId, { process: proc, cwd: params.cwd });
 
+      // Accumulate response text from assistant/message events so we can
+      // include it in the exit notification as a fallback. This protects
+      // against notifications being lost when the stdout pipe is congested
+      // by large concurrent responses (e.g., fs/readdir).
+      let accumulatedText = '';
+
       // Parse stdout as newline-delimited JSON (stream-json format)
       let buffer = '';
-      let eventCount = 0;
       proc.stdout.on('data', (chunk) => {
-        const text = chunk.toString();
-        buffer += text;
+        buffer += chunk.toString();
         const lines = buffer.split('\n');
         buffer = lines.pop(); // Keep incomplete last line
         for (const line of lines) {
           if (!line.trim()) continue;
-          eventCount++;
           try {
             const event = JSON.parse(line);
-            process.stderr.write(`[ccud] stdout event #${eventCount}: type=${event.type} subtype=${event.subtype || ''}\n`);
+
+            // Capture text from assistant/message events
+            if ((event.type === 'assistant' || event.type === 'message') && event.message?.content) {
+              for (const block of event.message.content) {
+                if (block.type === 'text' && block.text) {
+                  accumulatedText += block.text;
+                }
+              }
+            }
+            // Also capture from result event if present
+            if (event.type === 'result' && typeof event.result === 'string') {
+              if (!accumulatedText) accumulatedText = event.result;
+            }
+
             transport.send({
               jsonrpc: '2.0',
               method: 'claude/output',
@@ -108,7 +124,6 @@ export async function handleClaude(method, params, transport) {
             });
           } catch {
             // Non-JSON output -- send as raw text
-            process.stderr.write(`[ccud] stdout raw line #${eventCount}: ${line.substring(0, 80)}\n`);
             transport.send({
               jsonrpc: '2.0',
               method: 'claude/output',
@@ -130,13 +145,13 @@ export async function handleClaude(method, params, transport) {
         }
       });
 
-      // Handle process exit
+      // Handle process exit — include accumulated text as fallback
       proc.on('exit', (code, signal) => {
         activeSessions.delete(sessionId);
         transport.send({
           jsonrpc: '2.0',
           method: 'claude/output',
-          params: { sessionId, event: { type: 'exit', code, signal } },
+          params: { sessionId, event: { type: 'exit', code, signal, accumulatedText: accumulatedText || null } },
         });
       });
 
