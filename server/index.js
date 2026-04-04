@@ -369,7 +369,7 @@ const app = express();
 const server = http.createServer(app);
 
 const ptySessionsMap = new Map();
-/** @type {Map<string, { hostId: string, writer: WebSocketWriter, startedAt: number }>} */
+/** @type {Map<string, { hostId: string, writer: WebSocketWriter, startedAt: number, hasText: boolean }>} */
 const remoteClaudeSessions = new Map();
 /** @type {Map<string, Array<{ requestId: string, toolName: string, input: any, context: any, sessionId: string, receivedAt: Date }>>} */
 const remoteClaudePendingPermissions = new Map();
@@ -1736,6 +1736,9 @@ function translateClaudeCliEvent(event, sessionId) {
     // Handle exit event — may include accumulatedText as fallback when
     // individual assistant/message notifications were lost in transit
     if (event.type === 'exit') {
+        // accumulatedText is a fallback from the daemon — only use it if no
+        // assistant/text events were delivered (checked by the relay handler
+        // via session.hasText before calling this function).
         const messages = [];
         if (event.accumulatedText) {
             messages.push(createNormalizedMessage({
@@ -1929,6 +1932,12 @@ function ensureRemoteClaudeRelay(hostId) {
             return;
         }
 
+        // Strip accumulatedText fallback if text was already delivered via
+        // assistant/message events — prevents duplicate messages
+        if (event.type === 'exit' && event.accumulatedText && session.hasText) {
+            delete event.accumulatedText;
+        }
+
         const messages = translateClaudeCliEvent(event, sessionId);
 
         // Send messages with staggered timing to prevent React 18's automatic
@@ -1958,6 +1967,11 @@ function ensureRemoteClaudeRelay(hostId) {
                     sessionId,
                     pending.filter((item) => item.requestId !== normalized.requestId),
                 );
+            }
+
+            // Track when text has been sent so the exit fallback can be skipped
+            if (normalized.kind === 'text' || normalized.kind === 'thinking') {
+                session.hasText = true;
             }
 
             if (delay === 0) {
@@ -2036,6 +2050,7 @@ async function handleRemoteClaudeCommand(data, hostId, writer) {
             hostId,
             writer,
             startedAt: Date.now(),
+            hasText: false,
         });
 
         // Start or resume the remote Claude session
