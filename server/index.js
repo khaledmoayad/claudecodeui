@@ -1834,31 +1834,17 @@ function translateClaudeCliEvent(event, sessionId) {
     }
 
     // Handle final result event from Claude CLI.
-    // In stream-json mode this can carry the full assistant reply text.
+    // Text is delivered via assistant events; the exit event's accumulatedText
+    // serves as fallback when those are lost.  The result event only emits complete.
     if (event.type === 'result') {
-        const messages = [];
-        if (event.errors) console.log('[DEBUG] result errors:', JSON.stringify(event.errors));
-        if (event.is_error) console.log('[DEBUG] result is_error, subtype:', event.subtype);
-        const resultText = extractTextFromClaudePayload(event.result || event.message || event.content);
+        if (event.errors?.length) console.log('[DEBUG] result errors:', JSON.stringify(event.errors));
 
-        if (resultText) {
-            messages.push(createNormalizedMessage({
-                kind: 'text',
-                role: 'assistant',
-                content: resultText,
-                sessionId,
-                provider: 'claude',
-            }));
-        }
-
-        messages.push(createNormalizedMessage({
+        return [createNormalizedMessage({
             kind: 'complete',
             exitCode: event.is_error ? 1 : 0,
             sessionId,
             provider: 'claude',
-        }));
-
-        return messages;
+        })];
     }
 
     // Handle tool_result events
