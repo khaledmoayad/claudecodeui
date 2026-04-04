@@ -208,6 +208,7 @@ export const api = {
       method: 'POST',
     }),
     status: (hostId) => authenticatedFetch(`/api/remote-hosts/${hostId}/status`),
+    allConnectionStates: () => authenticatedFetch('/api/remote-hosts/connections'),
     disconnect: (hostId) => authenticatedFetch(`/api/remote-hosts/${hostId}/disconnect`, {
       method: 'POST',
     }),

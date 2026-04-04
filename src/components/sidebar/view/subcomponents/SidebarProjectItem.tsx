@@ -4,9 +4,9 @@ import { Button } from '../../../../shared/view/ui';
 import { cn } from '../../../../lib/utils';
 import type { Project, ProjectSession, SessionProvider } from '../../../../types/app';
 import type { MCPServerStatus, SessionWithProvider } from '../../types/types';
-import { isRemoteProject } from '../../../../utils/remote';
+import { isRemoteProject, extractHostId } from '../../../../utils/remote';
 import { getTaskIndicatorStatus } from '../../utils/utils';
-import ConnectionStatusIndicator from './ConnectionStatusIndicator';
+import ConnectionStatusIndicator, { type ConnectionState } from './ConnectionStatusIndicator';
 import TaskIndicator from './TaskIndicator';
 import SidebarProjectSessions from './SidebarProjectSessions';
 
@@ -27,6 +27,7 @@ type SidebarProjectItemProps = {
   editingSessionName: string;
   tasksEnabled: boolean;
   mcpServerStatus: MCPServerStatus;
+  remoteConnectionStates: Record<string, ConnectionState>;
   onEditingNameChange: (name: string) => void;
   onToggleProject: (projectName: string) => void;
   onProjectSelect: (project: Project) => void;
@@ -77,6 +78,7 @@ export default function SidebarProjectItem({
   editingSessionName,
   tasksEnabled,
   mcpServerStatus,
+  remoteConnectionStates,
   onEditingNameChange,
   onToggleProject,
   onProjectSelect,
@@ -98,6 +100,8 @@ export default function SidebarProjectItem({
   const isSelected = selectedProject?.name === project.name;
   const isEditing = editingProject === project.name;
   const isRemote = isRemoteProject(project);
+  const remoteHostId = isRemote ? extractHostId(project) : null;
+  const connectionState: ConnectionState = (remoteHostId && remoteConnectionStates[remoteHostId]) || 'disconnected';
   const hasMoreSessions = project.sessionMeta?.hasMore === true;
   const sessionCountDisplay = getSessionCountDisplay(sessions, hasMoreSessions);
   const sessionCountLabel = `${sessionCountDisplay} session${sessions.length === 1 ? '' : 's'}`;
@@ -181,7 +185,7 @@ export default function SidebarProjectItem({
                         <div className="flex min-w-0 items-center">
                           <h3 className="truncate text-sm font-medium text-foreground">{project.displayName}</h3>
                           {isRemote && (
-                            <ConnectionStatusIndicator state="disconnected" size="xs" className="ml-1.5" />
+                            <ConnectionStatusIndicator state={connectionState} size="xs" className="ml-1.5" />
                           )}
                         </div>
                         {tasksEnabled && !isRemote && (
@@ -328,7 +332,7 @@ export default function SidebarProjectItem({
                       {project.displayName}
                     </div>
                     {isRemote && (
-                      <ConnectionStatusIndicator state="disconnected" size="xs" className="ml-1.5 flex-shrink-0" />
+                      <ConnectionStatusIndicator state={connectionState} size="xs" className="ml-1.5 flex-shrink-0" />
                     )}
                   </div>
                   <div className="text-xs text-muted-foreground">

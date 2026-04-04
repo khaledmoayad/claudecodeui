@@ -617,7 +617,7 @@ const remoteConnectionRoutes = createRemoteConnectionRoutes({
       await reestablishRemoteWatches(reconnectedHostId);
     });
 
-    // Handle connection loss: clean up notification listeners and notify frontend
+    // Broadcast all connection state changes to frontend clients
     mgr.on('state', ({ state }) => {
       if (state === 'failed' || state === 'disconnected') {
         const cleanup = remoteWatchCleanups.get(hostId);
@@ -626,18 +626,20 @@ const remoteConnectionRoutes = createRemoteConnectionRoutes({
           remoteWatchCleanups.delete(hostId);
         }
         // Keep remoteWatchedPaths so reconnection can re-establish them
-        // But notify frontend about disconnection
-        const msg = JSON.stringify({
-          type: 'remote_disconnected',
-          hostId,
-          timestamp: new Date().toISOString(),
-        });
-        connectedClients.forEach(client => {
-          if (client.readyState === WebSocket.OPEN) {
-            client.send(msg);
-          }
-        });
       }
+
+      // Notify frontend about every state transition
+      const msg = JSON.stringify({
+        type: 'remote_connection_state',
+        hostId,
+        state,
+        timestamp: new Date().toISOString(),
+      });
+      connectedClients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(msg);
+        }
+      });
     });
   },
 });
