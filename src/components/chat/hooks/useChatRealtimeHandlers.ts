@@ -181,8 +181,6 @@ export function useChatRealtimeHandlers({
 
     const sid = msg.sessionId || activeViewSessionId;
 
-    console.log('[RT]', msg.kind, 'sid:', sid, 'activeView:', activeViewSessionId, 'currentSid:', currentSessionId);
-
     // --- Streaming: buffer for performance ---
     if (msg.kind === 'stream_delta') {
       const text = msg.content || '';

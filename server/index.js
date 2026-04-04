@@ -1837,8 +1837,6 @@ function translateClaudeCliEvent(event, sessionId) {
     // Text is delivered via assistant events; the exit event's accumulatedText
     // serves as fallback when those are lost.  The result event only emits complete.
     if (event.type === 'result') {
-        if (event.errors?.length) console.log('[DEBUG] result errors:', JSON.stringify(event.errors));
-
         return [createNormalizedMessage({
             kind: 'complete',
             exitCode: event.is_error ? 1 : 0,
@@ -1910,13 +1908,8 @@ function ensureRemoteClaudeRelay(hostId) {
         const { sessionId, event } = msg.params || {};
         if (!sessionId || !event) return;
 
-        console.log('[DEBUG] Remote Claude notification:', sessionId, event?.type || 'unknown');
-
         const session = remoteClaudeSessions.get(sessionId);
-        if (!session) {
-            console.warn('[DEBUG] Remote Claude: no session found for notification, sessionId:', sessionId);
-            return;
-        }
+        if (!session) return;
 
         // Strip accumulatedText fallback if text was already delivered via
         // assistant/message events — prevents duplicate messages
@@ -1995,9 +1988,7 @@ async function handleRemoteClaudeCommand(data, hostId, writer) {
     try {
         const { ensureConnection } = await import('./remote/connection-manager.js');
         conn = await ensureConnection(hostId);
-        console.log('[DEBUG] Remote Claude: connection ready for', hostId);
     } catch (connErr) {
-        console.error('[DEBUG] Remote Claude: connection failed:', connErr.message);
         writer.send(createNormalizedMessage({
             kind: 'error',
             content: 'Remote host not connected: ' + connErr.message,
@@ -2007,7 +1998,6 @@ async function handleRemoteClaudeCommand(data, hostId, writer) {
     }
 
     if (!ensureRemoteClaudeRelay(hostId)) {
-        console.error('[DEBUG] Remote Claude: relay not ready for', hostId);
         writer.send(createNormalizedMessage({
             kind: 'error',
             content: 'Remote host transport is not ready',
@@ -2015,7 +2005,6 @@ async function handleRemoteClaudeCommand(data, hostId, writer) {
         }));
         return;
     }
-    console.log('[DEBUG] Remote Claude: relay ready');
 
     try {
         const requestedSessionId = data.options?.sessionId;
@@ -2051,11 +2040,8 @@ async function handleRemoteClaudeCommand(data, hostId, writer) {
             },
         }, 120000); // 2 minute timeout for claude startup
 
-        console.log('[DEBUG] Remote Claude: claude/start returned:', JSON.stringify(result));
-
         if (result.error) {
             remoteClaudeSessions.delete(sessionId);
-            console.error('[DEBUG] Remote Claude: daemon error:', result.error.message);
             writer.send(createNormalizedMessage({
                 kind: 'error',
                 content: result.error.message || 'Failed to start remote Claude session',
@@ -2063,8 +2049,6 @@ async function handleRemoteClaudeCommand(data, hostId, writer) {
             }));
             return;
         }
-
-        console.log('[DEBUG] Remote Claude: session started, id:', result.sessionId);
 
         // Send session_created message
         writer.send(createNormalizedMessage({
@@ -2076,7 +2060,6 @@ async function handleRemoteClaudeCommand(data, hostId, writer) {
         writer.setSessionId(result.sessionId);
 
     } catch (err) {
-        console.error('[DEBUG] Remote Claude: session error:', err.message);
         writer.send(createNormalizedMessage({
             kind: 'error',
             content: 'Remote Claude session failed: ' + err.message,

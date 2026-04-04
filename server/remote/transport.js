@@ -44,8 +44,6 @@ export class SSHTransport {
    */
   _onData(chunk) {
     const text = chunk.toString('utf8');
-    const lineCount = (text.match(/\n/g) || []).length;
-    console.log(`[SSHTransport] _onData: ${text.length} bytes, ${lineCount} newlines, buffer was ${this._buffer.length} bytes`);
     this._buffer += text;
 
     if (this._buffer.length > MAX_MESSAGE_SIZE_BYTES) {
@@ -72,7 +70,7 @@ export class SSHTransport {
         const parsed = JSON.parse(line);
         this._dispatch(parsed);
       } catch (e) {
-        console.error('[SSHTransport] Invalid JSON:', e.message, 'line length:', line.length, 'start:', line.substring(0, 100));
+        console.error('[SSHTransport] Invalid JSON:', e.message);
       }
     }
   }
@@ -82,8 +80,6 @@ export class SSHTransport {
    * @param {object} msg - Parsed JSON-RPC message
    */
   _dispatch(msg) {
-    console.log('[SSHTransport] Received:', msg.id !== undefined ? `response id=${msg.id} ${msg.error ? 'ERROR: ' + msg.error.message : 'OK'}` : msg.method ? `notification ${msg.method}` : 'unknown', 'pending:', [...this._pendingRequests.keys()]);
-
     if (msg.id !== undefined && this._pendingRequests.has(msg.id)) {
       const pending = this._pendingRequests.get(msg.id);
       clearTimeout(pending.timer);
@@ -123,12 +119,10 @@ export class SSHTransport {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this._pendingRequests.delete(id);
-        console.error('[SSHTransport] RPC timeout for', method, 'id:', id, 'pending:', [...this._pendingRequests.keys()]);
         reject(new Error('RPC timeout: ' + method));
       }, timeoutMs || RPC_DEFAULT_TIMEOUT_MS);
 
       this._pendingRequests.set(id, { resolve, reject, timer });
-      console.log('[SSHTransport] Sending request:', method, 'id:', id);
       this._writable.write(JSON.stringify(request) + '\n');
     });
   }
