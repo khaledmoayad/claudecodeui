@@ -642,6 +642,11 @@ async function getProjects(progressCallback = null) {
 }
 
 async function getSessions(projectName, limit = 5, offset = 0) {
+  // Remote projects store sessions on the remote host, not locally
+  if (typeof projectName === 'string' && projectName.startsWith('remote:')) {
+    return { sessions: [], hasMore: false, total: 0 };
+  }
+
   const projectDir = path.join(os.homedir(), '.claude', 'projects', projectName);
 
   try {
@@ -981,6 +986,11 @@ async function parseAgentTools(filePath) {
 
 // Get messages for a specific session with pagination support
 async function getSessionMessages(projectName, sessionId, limit = null, offset = 0) {
+  // Remote projects store sessions on the remote host, not locally
+  if (typeof projectName === 'string' && projectName.startsWith('remote:')) {
+    return { messages: [], total: 0, hasMore: false };
+  }
+
   const projectDir = path.join(os.homedir(), '.claude', 'projects', projectName);
 
   try {
@@ -1103,6 +1113,11 @@ async function renameProject(projectName, newDisplayName) {
 
 // Delete a session from a project
 async function deleteSession(projectName, sessionId) {
+  // Remote project sessions are on the remote host -- nothing to delete locally
+  if (typeof projectName === 'string' && projectName.startsWith('remote:')) {
+    return true;
+  }
+
   const projectDir = path.join(os.homedir(), '.claude', 'projects', projectName);
 
   try {
@@ -1166,6 +1181,14 @@ async function isProjectEmpty(projectName) {
 
 // Delete a project (force=true to delete even with sessions)
 async function deleteProject(projectName, force = false) {
+  // Remote projects only need config removal -- no local session files exist
+  if (typeof projectName === 'string' && projectName.startsWith('remote:')) {
+    const config = await loadProjectConfig();
+    delete config[projectName];
+    await saveProjectConfig(config);
+    return;
+  }
+
   const projectDir = path.join(os.homedir(), '.claude', 'projects', projectName);
 
   try {

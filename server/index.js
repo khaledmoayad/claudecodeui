@@ -3132,6 +3132,17 @@ app.get('/api/projects/:projectName/sessions/:sessionId/token-usage', authentica
             });
         }
 
+        // Remote projects store sessions on the remote host -- no local token data
+        if (typeof projectName === 'string' && projectName.startsWith('remote:')) {
+            return res.json({
+                used: 0,
+                total: 0,
+                breakdown: { input: 0, cacheCreation: 0, cacheRead: 0 },
+                unsupported: true,
+                message: 'Token usage tracking not yet available for remote sessions',
+            });
+        }
+
         // Handle Claude sessions (default)
         // Extract actual project path
         let projectPath;
