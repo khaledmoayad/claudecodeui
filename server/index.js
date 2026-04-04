@@ -749,8 +749,34 @@ app.get('/api/projects', authenticateToken, async (req, res) => {
 
 app.get('/api/projects/:projectName/sessions', authenticateToken, async (req, res) => {
     try {
+        const projectName = req.params.projectName;
         const { limit = 5, offset = 0 } = req.query;
-        const result = await getSessions(req.params.projectName, parseInt(limit), parseInt(offset));
+
+        // Remote projects: fetch sessions from daemon via JSON-RPC
+        if (projectName.startsWith('remote:')) {
+            try {
+                const { getOperationsForProject } = await import('./remote/operations.js');
+                const { ops, projectRoot, hostId } = await getOperationsForProject(projectName);
+                const { ensureConnection } = await import('./remote/connection-manager.js');
+                const conn = await ensureConnection(hostId);
+                const result = await conn.transport.request('claude/list-sessions', { cwd: projectRoot }, 15000);
+                const sessions = (result.sessions || []).map(s => ({
+                    id: s.session_id || s.id,
+                    title: s.title || s.name || 'Session',
+                    created: s.created_at || s.created || new Date().toISOString(),
+                    updated: s.updated_at || s.updated || new Date().toISOString(),
+                    __provider: 'claude',
+                }));
+                // Apply pagination
+                const total = sessions.length;
+                const paged = sessions.slice(parseInt(offset), parseInt(offset) + parseInt(limit));
+                return res.json({ sessions: paged, hasMore: parseInt(offset) + parseInt(limit) < total, total });
+            } catch (err) {
+                return res.json({ sessions: [], hasMore: false, total: 0 });
+            }
+        }
+
+        const result = await getSessions(projectName, parseInt(limit), parseInt(offset));
         applyCustomSessionNames(result.sessions, 'claude');
         res.json(result);
     } catch (error) {

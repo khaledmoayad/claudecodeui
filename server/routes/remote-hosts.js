@@ -96,6 +96,21 @@ router.post('/', (req, res) => {
   }
 });
 
+// GET /connections — Get connection states for all remote hosts
+router.get('/connections', async (req, res) => {
+  try {
+    const { getAllConnections } = await import('../remote/connection-manager.js');
+    const connections = getAllConnections();
+    const result = [];
+    for (const [hostId, mgr] of connections) {
+      result.push({ hostId, state: mgr.state });
+    }
+    return res.json(result);
+  } catch {
+    return res.json([]);
+  }
+});
+
 // GET / — List all remote hosts
 router.get('/', (req, res) => {
   try {
