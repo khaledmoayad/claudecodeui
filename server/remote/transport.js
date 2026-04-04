@@ -43,7 +43,10 @@ export class SSHTransport {
    * @param {Buffer} chunk
    */
   _onData(chunk) {
-    this._buffer += chunk.toString('utf8');
+    const text = chunk.toString('utf8');
+    const lineCount = (text.match(/\n/g) || []).length;
+    console.log(`[SSHTransport] _onData: ${text.length} bytes, ${lineCount} newlines, buffer was ${this._buffer.length} bytes`);
+    this._buffer += text;
 
     if (this._buffer.length > MAX_MESSAGE_SIZE_BYTES) {
       console.error('[SSHTransport] Buffer overflow, clearing buffer');
@@ -69,7 +72,7 @@ export class SSHTransport {
         const parsed = JSON.parse(line);
         this._dispatch(parsed);
       } catch (e) {
-        console.error('[SSHTransport] Invalid JSON:', e.message);
+        console.error('[SSHTransport] Invalid JSON:', e.message, 'line length:', line.length, 'start:', line.substring(0, 100));
       }
     }
   }
