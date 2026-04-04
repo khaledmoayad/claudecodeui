@@ -1834,7 +1834,8 @@ function translateClaudeCliEvent(event, sessionId) {
     // In stream-json mode this can carry the full assistant reply text.
     if (event.type === 'result') {
         const messages = [];
-        console.log('[DEBUG] Full result event:', JSON.stringify(event).substring(0, 500));
+        if (event.errors) console.log('[DEBUG] result errors:', JSON.stringify(event.errors));
+        if (event.is_error) console.log('[DEBUG] result is_error, subtype:', event.subtype);
         const resultText = extractTextFromClaudePayload(event.result || event.message || event.content);
 
         if (resultText) {
