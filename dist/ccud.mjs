@@ -2381,7 +2381,7 @@ async function handleClaude(method, params, transport2) {
       }
       const sessionId = params.sessionId || crypto.randomUUID();
       const args = ["--output-format", "stream-json", "--verbose"];
-      if (params.sessionId) {
+      if (params.resume && params.sessionId) {
         args.push("--resume", params.sessionId);
       }
       if (params.options?.model) {

@@ -2042,6 +2042,7 @@ async function handleRemoteClaudeCommand(data, hostId, writer) {
         const result = await conn.transport.request('claude/start', {
             cwd: data.options?.projectPath || data.options?.cwd,
             sessionId,
+            resume: !!resumeSessionId,
             command: data.command,
             options: {
                 model: data.options?.model,
