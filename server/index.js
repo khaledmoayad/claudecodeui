@@ -612,8 +612,12 @@ app.use('/api/remote-hosts', authenticateToken, remoteHostsRoutes);
 setOnConnectionCreated((mgr, hostId) => {
   // Re-establish file watchers after SSH reconnection
   mgr.on('reconnected', async ({ hostId: reconnectedHostId }) => {
-    console.log('[RemoteWatch] Reconnected to', reconnectedHostId, '-- re-establishing watchers');
-    await reestablishRemoteWatches(reconnectedHostId);
+    try {
+      console.log('[RemoteWatch] Reconnected to', reconnectedHostId, '-- re-establishing watchers');
+      await reestablishRemoteWatches(reconnectedHostId);
+    } catch (error) {
+      console.error('[RemoteWatch] Failed to re-establish watchers for', reconnectedHostId, error.message);
+    }
   });
 
   // Broadcast all connection state changes to frontend clients

@@ -379,7 +379,11 @@ export class SSHConnectionManager extends EventEmitter {
       Math.round(delay) + 'ms (attempt ' + this._reconnectAttempt + ')'
     );
 
-    this._reconnectTimer = setTimeout(() => this._doConnect(), delay);
+    this._reconnectTimer = setTimeout(() => {
+      this._doConnect().catch((err) => {
+        this._handleConnectionFailure(err.message);
+      });
+    }, delay);
   }
 
   /**
@@ -464,7 +468,9 @@ export async function ensureConnection(hostId, timeoutMs = 30000) {
     const hostConfig = remoteHostsDb.getById(hostId);
     if (!hostConfig) throw new Error(`Remote host not found: ${hostId}`);
     mgr = createConnection(hostConfig);
-    mgr.connect();
+    mgr.connect().catch((err) => {
+      console.error('[ConnectionManager:' + hostId + '] ensureConnection connect failed:', err.message);
+    });
   }
 
   // Wait for ready state

@@ -10,6 +10,18 @@ import { log, error as logError } from './logger.js';
 export function createStdioTransport(onMessage) {
   const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
 
+  const sendInternalError = (id, err) => {
+    if (id === undefined || id === null) {
+      return;
+    }
+
+    const code = typeof err?.code === 'number' ? err.code : -32603;
+    const message = err instanceof Error ? err.message : 'Internal error';
+    process.stdout.write(JSON.stringify(
+      jsonrpc.error(id, new jsonrpc.JsonRpcError(message, code)),
+    ) + '\n');
+  };
+
   rl.on('line', (line) => {
     if (!line.trim()) return;
     try {
@@ -17,10 +29,18 @@ export function createStdioTransport(onMessage) {
       // Use jsonrpc-lite to validate and classify the message
       if (Array.isArray(parsed)) {
         // Batch request -- pass array of parsed objects
-        onMessage(parsed);
+        Promise.resolve(onMessage(parsed)).catch((err) => {
+          logError(`Unhandled batch RPC error: ${err.message}`);
+          for (const message of parsed) {
+            sendInternalError(message?.id, err);
+          }
+        });
       } else {
         const rpcObj = jsonrpc.parseObject(parsed);
-        onMessage(parsed, rpcObj);
+        Promise.resolve(onMessage(parsed, rpcObj)).catch((err) => {
+          logError(`Unhandled RPC error for ${parsed.method || 'unknown method'}: ${err.message}`);
+          sendInternalError(parsed.id, err);
+        });
       }
     } catch (e) {
       logError(`Invalid JSON-RPC: ${e.message}`);
