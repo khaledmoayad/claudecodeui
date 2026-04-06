@@ -361,6 +361,9 @@ export class SSHConnectionManager extends EventEmitter {
    * @param {string} reason
    */
   _attemptReconnect(reason) {
+    // Guard: if a reconnect is already scheduled, don't double-schedule
+    if (this._reconnectTimer) return;
+
     this._reconnectAttempt++;
 
     if (this._reconnectAttempt > MAX_RECONNECT_ATTEMPTS) {

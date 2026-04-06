@@ -1,4 +1,5 @@
 import express from 'express';
+import os from 'os';
 import { getOperationsForProject } from '../remote/operations.js';
 import {
   validateCommitRef,
@@ -282,9 +283,11 @@ router.post('/generate-commit-message', async (req, res) => {
   }
 
   try {
-    const { ops, projectRoot } = await getOperationsForProject(project);
+    const { ops, projectRoot, isRemote } = await getOperationsForProject(project);
     const diffContext = await ops.generateCommitDiff(projectRoot, files);
-    const message = await generateCommitMessageWithAI(files, diffContext, provider, projectRoot);
+    // Remote projects: use a temp dir as cwd since the AI only needs the diff text
+    const aiCwd = isRemote ? os.tmpdir() : projectRoot;
+    const message = await generateCommitMessageWithAI(files, diffContext, provider, aiCwd);
     res.json({ message });
   } catch (error) {
     console.error('Generate commit message error:', error);

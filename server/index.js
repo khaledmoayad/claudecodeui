@@ -2474,7 +2474,7 @@ function handleShellConnection(ws) {
                 // Detect if this is a remote project
                 if (data.hostId) {
                   const remoteHostId = data.hostId;
-                  const remoteSessionKey = `remote:${remoteHostId}:${sessionId || 'default'}`;
+                  const remoteSessionKey = `remote:${remoteHostId}:${sessionId || data.projectPath || 'default'}`;
                   ptySessionKey = remoteSessionKey;
 
                   // Check for existing cached session
@@ -2585,6 +2585,16 @@ function handleShellConnection(ws) {
                     stream.on('error', (streamErr) => {
                       console.error('[Shell] Remote stream error:', streamErr.message);
                     });
+
+                    // cd into the project directory
+                    if (data.projectPath) {
+                      stream.write('cd ' + JSON.stringify(data.projectPath) + ' && clear\n');
+                    }
+
+                    // Launch initial command (provider shell or plain command)
+                    if (initialCommand) {
+                      stream.write(initialCommand + '\n');
+                    }
 
                     // Cache the session
                     ptySessionsMap.set(remoteSessionKey, {
