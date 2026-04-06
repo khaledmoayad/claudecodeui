@@ -309,39 +309,60 @@ async function listSessions(cwd) {
             const parsed = JSON.parse(line);
             if (!parsed.sessionId) continue;
 
-            const existing = sessions.get(parsed.sessionId);
             const ts = parsed.timestamp || null;
 
-            if (!existing) {
-              let title = 'Session';
-              if (parsed.type === 'user' && parsed.message?.content) {
-                const content = parsed.message.content;
-                if (typeof content === 'string') {
-                  title = content.slice(0, 100);
-                } else if (Array.isArray(content)) {
-                  const textBlock = content.find((b) => b.type === 'text' && b.text);
-                  if (textBlock) title = textBlock.text.slice(0, 100);
-                }
-              }
+            if (!sessions.has(parsed.sessionId)) {
               sessions.set(parsed.sessionId, {
                 id: parsed.sessionId,
-                title,
+                title: null,
+                lastUserMessage: null,
+                lastAssistantMessage: null,
+                messageCount: 0,
                 created: ts || new Date().toISOString(),
                 updated: ts || new Date().toISOString(),
               });
-            } else {
-              if (ts && ts > existing.updated) existing.updated = ts;
-              if (ts && ts < existing.created) existing.created = ts;
-              // Update title from first user message if still generic
-              if (existing.title === 'Session' && parsed.type === 'user' && parsed.message?.content) {
-                const content = parsed.message.content;
-                if (typeof content === 'string') {
-                  existing.title = content.slice(0, 100);
-                } else if (Array.isArray(content)) {
-                  const textBlock = content.find((b) => b.type === 'text' && b.text);
-                  if (textBlock) existing.title = textBlock.text.slice(0, 100);
+            }
+
+            const session = sessions.get(parsed.sessionId);
+            if (ts && ts > session.updated) session.updated = ts;
+            if (ts && ts < session.created) session.created = ts;
+            session.messageCount++;
+
+            // Explicit summary entry (highest priority)
+            if (parsed.type === 'summary' && parsed.summary) {
+              session.title = parsed.summary;
+            }
+
+            // Track last user message (skip system messages)
+            if (parsed.type === 'user' && parsed.message?.content) {
+              const content = parsed.message.content;
+              let text = null;
+              if (typeof content === 'string') {
+                text = content;
+              } else if (Array.isArray(content) && content.length > 0) {
+                const textBlock = content.find((b) => b.type === 'text' && b.text);
+                if (textBlock) text = textBlock.text;
+              }
+              if (text && !text.startsWith('<command-name>') &&
+                  !text.startsWith('<system-reminder>') &&
+                  !text.startsWith('Caveat:') &&
+                  text !== 'Warmup') {
+                session.lastUserMessage = text;
+              }
+            }
+
+            // Track last assistant message as fallback
+            if (parsed.type === 'assistant' && parsed.message?.content) {
+              const content = parsed.message.content;
+              let text = null;
+              if (typeof content === 'string') {
+                text = content;
+              } else if (Array.isArray(content)) {
+                for (const part of content) {
+                  if (part.type === 'text' && part.text) text = part.text;
                 }
               }
+              if (text) session.lastAssistantMessage = text;
             }
           } catch { /* skip malformed */ }
         }
@@ -353,9 +374,26 @@ async function listSessions(cwd) {
     return [];
   }
 
-  return [...sessions.values()].sort((a, b) =>
-    new Date(b.updated) - new Date(a.updated),
-  );
+  // Apply naming: summary entry > last user message > last assistant message
+  // Matches local session naming in server/projects.js
+  const result = [];
+  for (const session of sessions.values()) {
+    if (!session.title) {
+      const msg = session.lastUserMessage || session.lastAssistantMessage;
+      session.title = msg
+        ? (msg.length > 50 ? msg.substring(0, 50) + '...' : msg)
+        : 'New Session';
+    }
+    result.push({
+      id: session.id,
+      title: session.title,
+      created: session.created,
+      updated: session.updated,
+      messageCount: session.messageCount,
+    });
+  }
+
+  return result.sort((a, b) => new Date(b.updated) - new Date(a.updated));
 }
 
 async function deleteSessionMessages(sessionId, cwd) {

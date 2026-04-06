@@ -674,6 +674,31 @@ setOnConnectionCreated((mgr, hostId) => {
         client.send(msg);
       }
     });
+
+    // When a remote connection becomes ready, refresh the project list so
+    // sessions are populated without requiring user interaction first.
+    if (state === 'ready') {
+      setTimeout(async () => {
+        try {
+          clearProjectDirectoryCache();
+          const updatedProjects = await getProjects(broadcastProgress);
+          const update = JSON.stringify({
+            type: 'projects_updated',
+            projects: updatedProjects,
+            timestamp: new Date().toISOString(),
+            changeType: 'remote_ready',
+            watchProvider: 'claude',
+          });
+          connectedClients.forEach(client => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(update);
+            }
+          });
+        } catch (err) {
+          console.error('[RemoteReady] Failed to refresh projects:', err.message);
+        }
+      }, 500);
+    }
   });
 });
 
@@ -798,7 +823,9 @@ app.get('/api/projects/:projectName/sessions', authenticateToken, async (req, re
                 const result = await conn.transport.request('claude/list-sessions', { cwd: projectRoot }, 15000);
                 const sessions = (result.sessions || []).map(s => ({
                     id: s.session_id || s.id,
-                    title: s.title || s.name || 'Session',
+                    summary: s.title || s.name || 'New Session',
+                    messageCount: s.messageCount || 0,
+                    lastActivity: new Date(s.updated_at || s.updated || s.created_at || s.created || Date.now()),
                     created: s.created_at || s.created || new Date().toISOString(),
                     updated: s.updated_at || s.updated || new Date().toISOString(),
                     __provider: 'claude',
@@ -841,6 +868,29 @@ app.delete('/api/projects/:projectName/sessions/:sessionId', authenticateToken, 
         sessionNamesDb.deleteName(sessionId, 'claude');
         console.log(`[API] Session ${sessionId} deleted successfully`);
         res.json({ success: true });
+
+        // For remote projects, broadcast updated project list so all clients
+        // reflect the deletion instead of re-showing stale sessions on refresh.
+        if (projectName.startsWith('remote:')) {
+            setTimeout(async () => {
+                try {
+                    clearProjectDirectoryCache();
+                    const updatedProjects = await getProjects(broadcastProgress);
+                    const update = JSON.stringify({
+                        type: 'projects_updated',
+                        projects: updatedProjects,
+                        timestamp: new Date().toISOString(),
+                        changeType: 'session_deleted',
+                        watchProvider: 'claude',
+                    });
+                    connectedClients.forEach(client => {
+                        if (client.readyState === WebSocket.OPEN) {
+                            client.send(update);
+                        }
+                    });
+                } catch { /* best-effort refresh */ }
+            }, 200);
+        }
     } catch (error) {
         console.error(`[API] Error deleting session ${req.params.sessionId}:`, error);
         res.status(500).json({ error: error.message });

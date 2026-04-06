@@ -677,7 +677,9 @@ async function getSessions(projectName, limit = 5, offset = 0, options = {}) {
       const result = await conn.transport.request('claude/list-sessions', { cwd: projectRoot }, 15000);
       const allSessions = (result.sessions || []).map(s => ({
         id: s.session_id || s.id,
-        title: s.title || s.name || 'Session',
+        summary: s.title || s.name || 'New Session',
+        messageCount: s.messageCount || 0,
+        lastActivity: new Date(s.updated_at || s.updated || s.created_at || s.created || Date.now()),
         created: s.created_at || s.created || new Date().toISOString(),
         updated: s.updated_at || s.updated || new Date().toISOString(),
         __provider: 'claude',
