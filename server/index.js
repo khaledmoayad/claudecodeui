@@ -70,7 +70,7 @@ import messagesRoutes from './routes/messages.js';
 import remoteHostsRoutes from './routes/remote-hosts.js';
 import createRemoteConnectionRoutes from './routes/remote-connections.js';
 import { getOperationsForProject } from './remote/operations.js';
-import { getConnection } from './remote/connection-manager.js';
+import { getConnection, setOnConnectionCreated } from './remote/connection-manager.js';
 import { createNormalizedMessage } from './providers/types.js';
 import { startEnabledPluginServers, stopAllPlugins, getPluginPort } from './utils/plugin-process-manager.js';
 import { initializeDatabase, sessionNamesDb, applyCustomSessionNames } from './database/db.js';
@@ -607,42 +607,43 @@ app.use('/api/sessions', authenticateToken, messagesRoutes);
 // Remote SSH host management routes (protected)
 app.use('/api/remote-hosts', authenticateToken, remoteHostsRoutes);
 
-// Remote SSH connection lifecycle routes (protected)
-// Pass lifecycle hooks so the server can attach reconnection/disconnect handlers
-const remoteConnectionRoutes = createRemoteConnectionRoutes({
-  onConnectionCreated: (mgr, hostId) => {
-    // Re-establish file watchers after SSH reconnection
-    mgr.on('reconnected', async ({ hostId: reconnectedHostId }) => {
-      console.log('[RemoteWatch] Reconnected to', reconnectedHostId, '-- re-establishing watchers');
-      await reestablishRemoteWatches(reconnectedHostId);
-    });
+// Register global connection lifecycle hook so ALL connections (including
+// those created on-demand by ensureConnection) get broadcast listeners attached.
+setOnConnectionCreated((mgr, hostId) => {
+  // Re-establish file watchers after SSH reconnection
+  mgr.on('reconnected', async ({ hostId: reconnectedHostId }) => {
+    console.log('[RemoteWatch] Reconnected to', reconnectedHostId, '-- re-establishing watchers');
+    await reestablishRemoteWatches(reconnectedHostId);
+  });
 
-    // Broadcast all connection state changes to frontend clients
-    mgr.on('state', ({ state }) => {
-      if (state === 'failed' || state === 'disconnected') {
-        const cleanup = remoteWatchCleanups.get(hostId);
-        if (cleanup) {
-          cleanup();
-          remoteWatchCleanups.delete(hostId);
-        }
-        // Keep remoteWatchedPaths so reconnection can re-establish them
+  // Broadcast all connection state changes to frontend clients
+  mgr.on('state', ({ state }) => {
+    if (state === 'failed' || state === 'disconnected') {
+      const cleanup = remoteWatchCleanups.get(hostId);
+      if (cleanup) {
+        cleanup();
+        remoteWatchCleanups.delete(hostId);
       }
+      // Keep remoteWatchedPaths so reconnection can re-establish them
+    }
 
-      // Notify frontend about every state transition
-      const msg = JSON.stringify({
-        type: 'remote_connection_state',
-        hostId,
-        state,
-        timestamp: new Date().toISOString(),
-      });
-      connectedClients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
-          client.send(msg);
-        }
-      });
+    // Notify frontend about every state transition
+    const msg = JSON.stringify({
+      type: 'remote_connection_state',
+      hostId,
+      state,
+      timestamp: new Date().toISOString(),
     });
-  },
+    connectedClients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(msg);
+      }
+    });
+  });
 });
+
+// Remote SSH connection lifecycle routes (protected)
+const remoteConnectionRoutes = createRemoteConnectionRoutes();
 app.use('/api/remote-hosts', authenticateToken, remoteConnectionRoutes);
 
 // Agent API Routes (uses API key authentication)
@@ -767,6 +768,7 @@ app.get('/api/projects/:projectName/sessions', authenticateToken, async (req, re
                     updated: s.updated_at || s.updated || new Date().toISOString(),
                     __provider: 'claude',
                 }));
+                applyCustomSessionNames(sessions, 'claude');
                 // Apply pagination
                 const total = sessions.length;
                 const paged = sessions.slice(parseInt(offset), parseInt(offset) + parseInt(limit));

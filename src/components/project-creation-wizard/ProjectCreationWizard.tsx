@@ -37,6 +37,14 @@ const initialFormState: WizardFormState = {
   remotePath: '',
 };
 
+const REMOTE_CONFIG_FIELDS = [
+  'remoteHostName',
+  'remoteHostname',
+  'remotePort',
+  'remoteUsername',
+  'remotePrivateKeyPath',
+] as const satisfies ReadonlyArray<keyof WizardFormState>;
+
 export default function ProjectCreationWizard({
   onClose,
   onProjectCreated,
@@ -70,7 +78,22 @@ export default function ProjectCreationWizard({
 
   // Keep cross-step values in this component; local UI state lives in child components.
   const updateField = useCallback(<K extends keyof WizardFormState>(key: K, value: WizardFormState[K]) => {
-    setFormState((previous) => ({ ...previous, [key]: value }));
+    const isRemoteConfigField = REMOTE_CONFIG_FIELDS.includes(key as (typeof REMOTE_CONFIG_FIELDS)[number]);
+    if (isRemoteConfigField) {
+      setTestResult(null);
+    }
+
+    setFormState((previous) => {
+      const next = { ...previous, [key]: value };
+
+      if (isRemoteConfigField) {
+        next.remoteConnectionTested = false;
+        next.remoteHostId = '';
+        next.remotePath = '';
+      }
+
+      return next;
+    });
   }, []);
 
   const updateWorkspaceType = useCallback(
@@ -132,10 +155,12 @@ export default function ProjectCreationWizard({
           return;
         }
 
-        // Create host and connect before navigating to step 3 (Option A)
-        if (!formState.remoteHostId) {
-          setIsCreating(true);
-          try {
+        setIsCreating(true);
+        try {
+          let hostId = formState.remoteHostId;
+
+          // Create host before navigating to step 3 when needed.
+          if (!hostId) {
             const createRes = await api.remoteHosts.create({
               name: formState.remoteHostName,
               hostname: formState.remoteHostname,
@@ -150,41 +175,54 @@ export default function ProjectCreationWizard({
               return;
             }
 
-            const hostId = createBody.id;
+            hostId = createBody.id;
             updateField('remoteHostId', hostId);
-
-            // Connect and wait for ready state
-            await api.remoteHosts.connect(hostId);
-
-            // Poll until connection is ready (daemon deployed + handshake complete)
-            const maxAttempts = 30;
-            for (let i = 0; i < maxAttempts; i++) {
-              await new Promise((r) => setTimeout(r, 1000));
-              try {
-                const statusRes = await api.remoteHosts.status(hostId);
-                const statusBody = await statusRes.json();
-                if (statusBody.state === 'ready') break;
-                if (statusBody.state === 'error' || statusBody.state === 'disconnected') {
-                  setError(statusBody.error || 'Connection failed after deployment');
-                  setIsCreating(false);
-                  return;
-                }
-              } catch {
-                // Retry on network error
-              }
-            }
-
-            setStep(3);
-          } catch {
-            setError(t('projectWizard.errors.failedToCreate'));
-          } finally {
-            setIsCreating(false);
           }
-          return;
-        }
 
-        // Host already exists (user went back from step 3)
-        setStep(3);
+          // Connect and wait for ready state.
+          const connectRes = await api.remoteHosts.connect(hostId);
+          const connectBody = await connectRes.json();
+          if (!connectRes.ok) {
+            setError(connectBody.error || t('projectWizard.errors.remoteConnectionNotReady'));
+            return;
+          }
+
+          // Poll until connection is ready (daemon deployed + handshake complete).
+          const maxAttempts = 30;
+          let isConnectionReady = false;
+          for (let i = 0; i < maxAttempts; i++) {
+            await new Promise((r) => setTimeout(r, 1000));
+            try {
+              const statusRes = await api.remoteHosts.status(hostId);
+              const statusBody = await statusRes.json();
+              if (statusBody.state === 'ready') {
+                isConnectionReady = true;
+                break;
+              }
+              if (
+                statusBody.state === 'error'
+                || statusBody.state === 'disconnected'
+                || statusBody.state === 'failed'
+              ) {
+                setError(statusBody.error || t('projectWizard.errors.remoteConnectionNotReady'));
+                return;
+              }
+            } catch {
+              // Retry on network error
+            }
+          }
+
+          if (!isConnectionReady) {
+            setError(t('projectWizard.errors.remoteConnectionNotReady'));
+            return;
+          }
+
+          setStep(3);
+        } catch {
+          setError(t('projectWizard.errors.failedToCreate'));
+        } finally {
+          setIsCreating(false);
+        }
         return;
       }
 

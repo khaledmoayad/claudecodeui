@@ -239,7 +239,8 @@
       "selectRemoteDirectory": "Please select a remote directory",
       "connectionTestFailed": "Connection test failed. Please check your SSH settings.",
       "failedToBrowseRemote": "Failed to browse remote filesystem",
-      "failedToAddRemoteProject": "Failed to add remote project"
+      "failedToAddRemoteProject": "Failed to add remote project",
+      "remoteConnectionNotReady": "Remote connection did not become ready. Please try again."
     }
   },
   "notifications": {

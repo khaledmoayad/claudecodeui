@@ -5,13 +5,301 @@
  * relays structured output as JSON-RPC notifications via the transport.
  */
 import { spawn, execFile } from 'child_process';
+import { createReadStream } from 'fs';
+import { readdir, readFile, writeFile } from 'fs/promises';
+import os from 'os';
+import path from 'path';
+import readline from 'readline';
 import { promisify } from 'util';
 import crypto from 'crypto';
 
 const execFileAsync = promisify(execFile);
+const claudeProjectsDir = path.join(os.homedir(), '.claude', 'projects');
 
 /** @type {Map<string, { process: import('child_process').ChildProcess, cwd: string }>} */
 const activeSessions = new Map();
+
+async function findProjectDirForSession(sessionId, cwd) {
+  let fallbackProjectDir = null;
+
+  try {
+    const projectEntries = await readdir(claudeProjectsDir, { withFileTypes: true });
+
+    for (const entry of projectEntries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+
+      const projectDir = path.join(claudeProjectsDir, entry.name);
+      let files = [];
+
+      try {
+        files = await readdir(projectDir);
+      } catch {
+        continue;
+      }
+
+      const jsonlFiles = files.filter((file) => file.endsWith('.jsonl') && !file.startsWith('agent-'));
+      for (const file of jsonlFiles) {
+        const jsonlFile = path.join(projectDir, file);
+        const fileStream = createReadStream(jsonlFile);
+        const rl = readline.createInterface({
+          input: fileStream,
+          crlfDelay: Infinity,
+        });
+
+        let matchedSession = false;
+
+        try {
+          for await (const line of rl) {
+            if (!line.trim()) {
+              continue;
+            }
+
+            try {
+              const parsed = JSON.parse(line);
+              if (parsed.sessionId !== sessionId) {
+                continue;
+              }
+
+              matchedSession = true;
+              if (!cwd || parsed.cwd === cwd) {
+                return projectDir;
+              }
+            } catch {
+              // Skip malformed lines while scanning for the matching session.
+            }
+          }
+        } finally {
+          rl.close();
+        }
+
+        if (matchedSession && !fallbackProjectDir) {
+          fallbackProjectDir = projectDir;
+        }
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return fallbackProjectDir;
+}
+
+async function parseAgentTools(filePath) {
+  const tools = [];
+
+  try {
+    const fileStream = createReadStream(filePath);
+    const rl = readline.createInterface({
+      input: fileStream,
+      crlfDelay: Infinity,
+    });
+
+    for await (const line of rl) {
+      if (!line.trim()) {
+        continue;
+      }
+
+      try {
+        const entry = JSON.parse(line);
+        if (entry.message?.role === 'assistant' && Array.isArray(entry.message?.content)) {
+          for (const part of entry.message.content) {
+            if (part.type === 'tool_use') {
+              tools.push({
+                toolId: part.id,
+                toolName: part.name,
+                toolInput: part.input,
+                timestamp: entry.timestamp,
+              });
+            }
+          }
+        }
+
+        if (entry.message?.role === 'user' && Array.isArray(entry.message?.content)) {
+          for (const part of entry.message.content) {
+            if (part.type === 'tool_result') {
+              const tool = tools.find((candidate) => candidate.toolId === part.tool_use_id);
+              if (tool) {
+                tool.toolResult = {
+                  content: typeof part.content === 'string'
+                    ? part.content
+                    : Array.isArray(part.content)
+                      ? part.content.map((content) => content.text || '').join('\n')
+                      : JSON.stringify(part.content),
+                  isError: Boolean(part.is_error),
+                };
+              }
+            }
+          }
+        }
+      } catch {
+        // Skip malformed lines.
+      }
+    }
+  } catch (error) {
+    console.warn(`Error parsing agent file ${filePath}:`, error.message);
+  }
+
+  return tools;
+}
+
+async function loadSessionMessages(sessionId, cwd, limit = null, offset = 0) {
+  try {
+    const projectDir = await findProjectDirForSession(sessionId, cwd);
+    if (!projectDir) {
+      return limit === null ? [] : {
+        messages: [],
+        total: 0,
+        hasMore: false,
+        offset,
+        limit,
+      };
+    }
+
+    const files = await readdir(projectDir);
+    const jsonlFiles = files.filter((file) => file.endsWith('.jsonl') && !file.startsWith('agent-'));
+    const agentFiles = files.filter((file) => file.endsWith('.jsonl') && file.startsWith('agent-'));
+
+    if (jsonlFiles.length === 0) {
+      return limit === null ? [] : {
+        messages: [],
+        total: 0,
+        hasMore: false,
+        offset,
+        limit,
+      };
+    }
+
+    const messages = [];
+    const agentToolsCache = new Map();
+
+    for (const file of jsonlFiles) {
+      const jsonlFile = path.join(projectDir, file);
+      const fileStream = createReadStream(jsonlFile);
+      const rl = readline.createInterface({
+        input: fileStream,
+        crlfDelay: Infinity,
+      });
+
+      for await (const line of rl) {
+        if (!line.trim()) {
+          continue;
+        }
+
+        try {
+          const entry = JSON.parse(line);
+          if (entry.sessionId === sessionId) {
+            messages.push(entry);
+          }
+        } catch {
+          // Skip malformed lines from concurrently-written JSONL files.
+        }
+      }
+    }
+
+    const agentIds = new Set();
+    for (const message of messages) {
+      if (message.toolUseResult?.agentId) {
+        agentIds.add(message.toolUseResult.agentId);
+      }
+    }
+
+    for (const agentId of agentIds) {
+      const agentFileName = `agent-${agentId}.jsonl`;
+      if (agentFiles.includes(agentFileName)) {
+        const agentFilePath = path.join(projectDir, agentFileName);
+        const tools = await parseAgentTools(agentFilePath);
+        agentToolsCache.set(agentId, tools);
+      }
+    }
+
+    for (const message of messages) {
+      if (message.toolUseResult?.agentId) {
+        const agentTools = agentToolsCache.get(message.toolUseResult.agentId);
+        if (agentTools && agentTools.length > 0) {
+          message.subagentTools = agentTools;
+        }
+      }
+    }
+
+    const sortedMessages = messages.sort((a, b) =>
+      new Date(a.timestamp || 0) - new Date(b.timestamp || 0),
+    );
+
+    if (limit === null) {
+      return sortedMessages;
+    }
+
+    const total = sortedMessages.length;
+    const startIndex = Math.max(0, total - offset - limit);
+    const endIndex = total - offset;
+
+    return {
+      messages: sortedMessages.slice(startIndex, endIndex),
+      total,
+      hasMore: startIndex > 0,
+      offset,
+      limit,
+    };
+  } catch (error) {
+    console.error(`Error reading messages for session ${sessionId}:`, error);
+    return limit === null ? [] : {
+      messages: [],
+      total: 0,
+      hasMore: false,
+      offset,
+      limit,
+    };
+  }
+}
+
+async function deleteSessionMessages(sessionId, cwd) {
+  const projectDir = await findProjectDirForSession(sessionId, cwd);
+  if (!projectDir) {
+    throw new Error(`Session ${sessionId} not found in any files`);
+  }
+
+  const files = await readdir(projectDir);
+  const jsonlFiles = files.filter((file) => file.endsWith('.jsonl'));
+
+  if (jsonlFiles.length === 0) {
+    throw new Error('No session files found for this project');
+  }
+
+  for (const file of jsonlFiles) {
+    const jsonlFile = path.join(projectDir, file);
+    const content = await readFile(jsonlFile, 'utf8');
+    const lines = content.split('\n').filter((line) => line.trim());
+
+    const hasSession = lines.some((line) => {
+      try {
+        return JSON.parse(line).sessionId === sessionId;
+      } catch {
+        return false;
+      }
+    });
+
+    if (hasSession) {
+      const filteredLines = lines.filter((line) => {
+        try {
+          return JSON.parse(line).sessionId !== sessionId;
+        } catch {
+          return true;
+        }
+      });
+
+      await writeFile(
+        jsonlFile,
+        filteredLines.join('\n') + (filteredLines.length > 0 ? '\n' : ''),
+        'utf8',
+      );
+      return true;
+    }
+  }
+
+  throw new Error(`Session ${sessionId} not found in any files`);
+}
 
 /**
  * Check if the claude CLI is available on the system PATH.
@@ -34,6 +322,8 @@ async function isClaudeAvailable() {
  * - claude/input: Send text input to a running session's stdin
  * - claude/abort: Kill a running session
  * - claude/list-sessions: List existing Claude sessions in a directory
+ * - claude/get-session-messages: Load persisted JSONL entries for a session
+ * - claude/delete-session: Delete persisted JSONL entries for a session
  *
  * @param {string} method - The RPC method name (e.g., 'claude/start')
  * @param {object} params - Method parameters
@@ -210,6 +500,29 @@ export async function handleClaude(method, params, transport) {
         return { sessions: Array.isArray(sessions) ? sessions : [] };
       } catch {
         return { sessions: [], error: 'Failed to list sessions' };
+      }
+    }
+
+    case 'claude/get-session-messages': {
+      return await loadSessionMessages(
+        params.sessionId,
+        params.cwd,
+        params.limit ?? null,
+        params.offset ?? 0,
+      );
+    }
+
+    case 'claude/delete-session': {
+      try {
+        await deleteSessionMessages(params.sessionId, params.cwd);
+        return { deleted: true };
+      } catch (error) {
+        return {
+          error: {
+            code: -32000,
+            message: error.message || 'Failed to delete session',
+          },
+        };
       }
     }
 

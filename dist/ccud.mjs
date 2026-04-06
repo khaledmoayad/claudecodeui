@@ -590,16 +590,16 @@ async function handleGit(method, params) {
   }
 }
 
-// node_modules/chokidar/esm/index.js
-import { stat as statcb } from "fs";
-import { stat as stat4, readdir as readdir3 } from "fs/promises";
-import { EventEmitter } from "events";
-import * as sysPath2 from "path";
+// ccud/node_modules/chokidar/index.js
+import { EventEmitter } from "node:events";
+import { stat as statcb, Stats } from "node:fs";
+import { readdir as readdir3, stat as stat4 } from "node:fs/promises";
+import * as sp2 from "node:path";
 
-// node_modules/readdirp/esm/index.js
-import { stat as stat2, lstat, readdir as readdir2, realpath } from "node:fs/promises";
+// ccud/node_modules/readdirp/index.js
+import { lstat, readdir as readdir2, realpath, stat as stat2 } from "node:fs/promises";
+import { join as pjoin, relative as prelative, resolve as presolve, sep as psep } from "node:path";
 import { Readable } from "node:stream";
-import { resolve as presolve, relative as prelative, join as pjoin, sep as psep } from "node:path";
 var EntryTypes = {
   FILE_TYPE: "files",
   DIR_TYPE: "directories",
@@ -654,6 +654,20 @@ var normalizeFilter = (filter) => {
   return emptyFn;
 };
 var ReaddirpStream = class extends Readable {
+  parents;
+  reading;
+  parent;
+  _stat;
+  _maxDepth;
+  _wantsDir;
+  _wantsFile;
+  _wantsEverything;
+  _root;
+  _isDirent;
+  _statsProp;
+  _rdOptions;
+  _fileFilter;
+  _directoryFilter;
   constructor(options = {}) {
     super({
       objectMode: true,
@@ -666,11 +680,11 @@ var ReaddirpStream = class extends Readable {
     this._directoryFilter = normalizeFilter(opts.directoryFilter);
     const statMethod = opts.lstat ? lstat : stat2;
     if (wantBigintFsStats) {
-      this._stat = (path) => statMethod(path, { bigint: true });
+      this._stat = (path2) => statMethod(path2, { bigint: true });
     } else {
       this._stat = statMethod;
     }
-    this._maxDepth = opts.depth ?? defaultOptions.depth;
+    this._maxDepth = opts.depth != null && Number.isSafeInteger(opts.depth) ? opts.depth : defaultOptions.depth;
     this._wantsDir = type ? DIR_TYPES.has(type) : false;
     this._wantsFile = type ? FILE_TYPES.has(type) : false;
     this._wantsEverything = type === EntryTypes.EVERYTHING_TYPE;
@@ -691,8 +705,8 @@ var ReaddirpStream = class extends Readable {
         const par = this.parent;
         const fil = par && par.files;
         if (fil && fil.length > 0) {
-          const { path, depth } = par;
-          const slice = fil.splice(0, batch).map((dirent) => this._formatEntry(dirent, path));
+          const { path: path2, depth } = par;
+          const slice = fil.splice(0, batch).map((dirent) => this._formatEntry(dirent, path2));
           const awaited = await Promise.all(slice);
           for (const entry of awaited) {
             if (!entry)
@@ -732,20 +746,20 @@ var ReaddirpStream = class extends Readable {
       this.reading = false;
     }
   }
-  async _exploreDir(path, depth) {
+  async _exploreDir(path2, depth) {
     let files;
     try {
-      files = await readdir2(path, this._rdOptions);
+      files = await readdir2(path2, this._rdOptions);
     } catch (error2) {
       this._onError(error2);
     }
-    return { files, depth, path };
+    return { files, depth, path: path2 };
   }
-  async _formatEntry(dirent, path) {
+  async _formatEntry(dirent, path2) {
     let entry;
     const basename3 = this._isDirent ? dirent.name : dirent;
     try {
-      const fullPath = presolve(pjoin(path, basename3));
+      const fullPath = presolve(pjoin(path2, basename3));
       entry = { path: prelative(this._root, fullPath), fullPath, basename: basename3 };
       entry[this._statsProp] = this._isDirent ? dirent : await this._stat(fullPath);
     } catch (err) {
@@ -815,11 +829,11 @@ function readdirp(root, options = {}) {
   return new ReaddirpStream(options);
 }
 
-// node_modules/chokidar/esm/handler.js
-import { watchFile, unwatchFile, watch as fs_watch } from "fs";
-import { open, stat as stat3, lstat as lstat2, realpath as fsrealpath } from "fs/promises";
-import * as sysPath from "path";
-import { type as osType } from "os";
+// ccud/node_modules/chokidar/handler.js
+import { watch as fs_watch, unwatchFile, watchFile } from "node:fs";
+import { realpath as fsrealpath, lstat as lstat2, open, stat as stat3 } from "node:fs/promises";
+import { type as osType } from "node:os";
+import * as sp from "node:path";
 var STR_DATA = "data";
 var STR_END = "end";
 var STR_CLOSE = "close";
@@ -1112,7 +1126,7 @@ var binaryExtensions = /* @__PURE__ */ new Set([
   "zip",
   "zipx"
 ]);
-var isBinaryPath = (filePath) => binaryExtensions.has(sysPath.extname(filePath).slice(1).toLowerCase());
+var isBinaryPath = (filePath) => binaryExtensions.has(sp.extname(filePath).slice(1).toLowerCase());
 var foreach = (val, fn) => {
   if (val instanceof Set) {
     val.forEach(fn);
@@ -1145,16 +1159,16 @@ var delFromSet = (main, prop, item) => {
 };
 var isEmptySet = (val) => val instanceof Set ? val.size === 0 : !val;
 var FsWatchInstances = /* @__PURE__ */ new Map();
-function createFsWatchInstance(path, options, listener, errHandler, emitRaw) {
+function createFsWatchInstance(path2, options, listener, errHandler, emitRaw) {
   const handleEvent = (rawEvent, evPath) => {
-    listener(path);
-    emitRaw(rawEvent, evPath, { watchedPath: path });
-    if (evPath && path !== evPath) {
-      fsWatchBroadcast(sysPath.resolve(path, evPath), KEY_LISTENERS, sysPath.join(path, evPath));
+    listener(path2);
+    emitRaw(rawEvent, evPath, { watchedPath: path2 });
+    if (evPath && path2 !== evPath) {
+      fsWatchBroadcast(sp.resolve(path2, evPath), KEY_LISTENERS, sp.join(path2, evPath));
     }
   };
   try {
-    return fs_watch(path, {
+    return fs_watch(path2, {
       persistent: options.persistent
     }, handleEvent);
   } catch (error2) {
@@ -1170,12 +1184,12 @@ var fsWatchBroadcast = (fullPath, listenerType, val1, val2, val3) => {
     listener(val1, val2, val3);
   });
 };
-var setFsWatchListener = (path, fullPath, options, handlers) => {
+var setFsWatchListener = (path2, fullPath, options, handlers) => {
   const { listener, errHandler, rawEmitter } = handlers;
   let cont = FsWatchInstances.get(fullPath);
   let watcher;
   if (!options.persistent) {
-    watcher = createFsWatchInstance(path, options, listener, errHandler, rawEmitter);
+    watcher = createFsWatchInstance(path2, options, listener, errHandler, rawEmitter);
     if (!watcher)
       return;
     return watcher.close.bind(watcher);
@@ -1186,7 +1200,7 @@ var setFsWatchListener = (path, fullPath, options, handlers) => {
     addAndConvert(cont, KEY_RAW, rawEmitter);
   } else {
     watcher = createFsWatchInstance(
-      path,
+      path2,
       options,
       fsWatchBroadcast.bind(null, fullPath, KEY_LISTENERS),
       errHandler,
@@ -1201,7 +1215,7 @@ var setFsWatchListener = (path, fullPath, options, handlers) => {
         cont.watcherUnusable = true;
       if (isWindows && error2.code === "EPERM") {
         try {
-          const fd = await open(path, "r");
+          const fd = await open(path2, "r");
           await fd.close();
           broadcastErr(error2);
         } catch (err) {
@@ -1232,7 +1246,7 @@ var setFsWatchListener = (path, fullPath, options, handlers) => {
   };
 };
 var FsWatchFileInstances = /* @__PURE__ */ new Map();
-var setFsWatchFileListener = (path, fullPath, options, handlers) => {
+var setFsWatchFileListener = (path2, fullPath, options, handlers) => {
   const { listener, rawEmitter } = handlers;
   let cont = FsWatchFileInstances.get(fullPath);
   const copts = cont && cont.options;
@@ -1254,7 +1268,7 @@ var setFsWatchFileListener = (path, fullPath, options, handlers) => {
         });
         const currmtime = curr.mtimeMs;
         if (curr.size !== prev.size || currmtime > prev.mtimeMs || currmtime === 0) {
-          foreach(cont.listeners, (listener2) => listener2(path, curr));
+          foreach(cont.listeners, (listener2) => listener2(path2, curr));
         }
       })
     };
@@ -1272,6 +1286,8 @@ var setFsWatchFileListener = (path, fullPath, options, handlers) => {
   };
 };
 var NodeFsHandler = class {
+  fsw;
+  _boundHandleError;
   constructor(fsW) {
     this.fsw = fsW;
     this._boundHandleError = (error2) => fsW._handleError(error2);
@@ -1282,13 +1298,13 @@ var NodeFsHandler = class {
    * @param listener on fs change
    * @returns closer for the watcher instance
    */
-  _watchWithNodeFs(path, listener) {
+  _watchWithNodeFs(path2, listener) {
     const opts = this.fsw.options;
-    const directory = sysPath.dirname(path);
-    const basename3 = sysPath.basename(path);
+    const directory = sp.dirname(path2);
+    const basename3 = sp.basename(path2);
     const parent = this.fsw._getWatchedDir(directory);
     parent.add(basename3);
-    const absolutePath = sysPath.resolve(path);
+    const absolutePath = sp.resolve(path2);
     const options = {
       persistent: opts.persistent
     };
@@ -1298,12 +1314,12 @@ var NodeFsHandler = class {
     if (opts.usePolling) {
       const enableBin = opts.interval !== opts.binaryInterval;
       options.interval = enableBin && isBinaryPath(basename3) ? opts.binaryInterval : opts.interval;
-      closer = setFsWatchFileListener(path, absolutePath, options, {
+      closer = setFsWatchFileListener(path2, absolutePath, options, {
         listener,
         rawEmitter: this.fsw._emitRaw
       });
     } else {
-      closer = setFsWatchListener(path, absolutePath, options, {
+      closer = setFsWatchListener(path2, absolutePath, options, {
         listener,
         errHandler: this._boundHandleError,
         rawEmitter: this.fsw._emitRaw
@@ -1319,13 +1335,13 @@ var NodeFsHandler = class {
     if (this.fsw.closed) {
       return;
     }
-    const dirname4 = sysPath.dirname(file);
-    const basename3 = sysPath.basename(file);
+    const dirname4 = sp.dirname(file);
+    const basename3 = sp.basename(file);
     const parent = this.fsw._getWatchedDir(dirname4);
     let prevStats = stats;
     if (parent.has(basename3))
       return;
-    const listener = async (path, newStats) => {
+    const listener = async (path2, newStats) => {
       if (!this.fsw._throttle(THROTTLE_MODE_WATCH, file, 5))
         return;
       if (!newStats || newStats.mtimeMs === 0) {
@@ -1339,11 +1355,11 @@ var NodeFsHandler = class {
             this.fsw._emit(EV.CHANGE, file, newStats2);
           }
           if ((isMacos || isLinux || isFreeBSD) && prevStats.ino !== newStats2.ino) {
-            this.fsw._closeFile(path);
+            this.fsw._closeFile(path2);
             prevStats = newStats2;
             const closer2 = this._watchWithNodeFs(file, listener);
             if (closer2)
-              this.fsw._addPathCloser(path, closer2);
+              this.fsw._addPathCloser(path2, closer2);
           } else {
             prevStats = newStats2;
           }
@@ -1375,7 +1391,7 @@ var NodeFsHandler = class {
    * @param item basename of this item
    * @returns true if no more processing is needed for this entry.
    */
-  async _handleSymlink(entry, directory, path, item) {
+  async _handleSymlink(entry, directory, path2, item) {
     if (this.fsw.closed) {
       return;
     }
@@ -1385,7 +1401,7 @@ var NodeFsHandler = class {
       this.fsw._incrReadyCount();
       let linkPath;
       try {
-        linkPath = await fsrealpath(path);
+        linkPath = await fsrealpath(path2);
       } catch (e) {
         this.fsw._emitReady();
         return true;
@@ -1395,12 +1411,12 @@ var NodeFsHandler = class {
       if (dir.has(item)) {
         if (this.fsw._symlinkPaths.get(full) !== linkPath) {
           this.fsw._symlinkPaths.set(full, linkPath);
-          this.fsw._emit(EV.CHANGE, path, entry.stats);
+          this.fsw._emit(EV.CHANGE, path2, entry.stats);
         }
       } else {
         dir.add(item);
         this.fsw._symlinkPaths.set(full, linkPath);
-        this.fsw._emit(EV.ADD, path, entry.stats);
+        this.fsw._emit(EV.ADD, path2, entry.stats);
       }
       this.fsw._emitReady();
       return true;
@@ -1411,8 +1427,9 @@ var NodeFsHandler = class {
     this.fsw._symlinkPaths.set(full, true);
   }
   _handleRead(directory, initialAdd, wh, target, dir, depth, throttler) {
-    directory = sysPath.join(directory, "");
-    throttler = this.fsw._throttle("readdir", directory, 1e3);
+    directory = sp.join(directory, "");
+    const throttleKey = target ? `${directory}:${target}` : directory;
+    throttler = this.fsw._throttle("readdir", throttleKey, 1e3);
     if (!throttler)
       return;
     const previous = this.fsw._getWatchedDir(wh.path);
@@ -1429,9 +1446,9 @@ var NodeFsHandler = class {
         return;
       }
       const item = entry.path;
-      let path = sysPath.join(directory, item);
+      let path2 = sp.join(directory, item);
       current.add(item);
-      if (entry.stats.isSymbolicLink() && await this._handleSymlink(entry, directory, path, item)) {
+      if (entry.stats.isSymbolicLink() && await this._handleSymlink(entry, directory, path2, item)) {
         return;
       }
       if (this.fsw.closed) {
@@ -1440,8 +1457,8 @@ var NodeFsHandler = class {
       }
       if (item === target || !target && !previous.has(item)) {
         this.fsw._incrReadyCount();
-        path = sysPath.join(dir, sysPath.relative(dir, path));
-        this._addToNodeFs(path, initialAdd, wh, depth + 1);
+        path2 = sp.join(dir, sp.relative(dir, path2));
+        this._addToNodeFs(path2, initialAdd, wh, depth + 1);
       }
     }).on(EV.ERROR, this._boundHandleError);
     return new Promise((resolve3, reject) => {
@@ -1477,12 +1494,12 @@ var NodeFsHandler = class {
    * @returns closer for the watcher instance.
    */
   async _handleDir(dir, stats, initialAdd, depth, target, wh, realpath2) {
-    const parentDir = this.fsw._getWatchedDir(sysPath.dirname(dir));
-    const tracked = parentDir.has(sysPath.basename(dir));
+    const parentDir = this.fsw._getWatchedDir(sp.dirname(dir));
+    const tracked = parentDir.has(sp.basename(dir));
     if (!(initialAdd && this.fsw.options.ignoreInitial) && !target && !tracked) {
       this.fsw._emit(EV.ADD_DIR, dir, stats);
     }
-    parentDir.add(sysPath.basename(dir));
+    parentDir.add(sp.basename(dir));
     this.fsw._getWatchedDir(dir);
     let throttler;
     let closer;
@@ -1510,13 +1527,13 @@ var NodeFsHandler = class {
    * @param depth Child path actually targeted for watch
    * @param target Child path actually targeted for watch
    */
-  async _addToNodeFs(path, initialAdd, priorWh, depth, target) {
+  async _addToNodeFs(path2, initialAdd, priorWh, depth, target) {
     const ready = this.fsw._emitReady;
-    if (this.fsw._isIgnored(path) || this.fsw.closed) {
+    if (this.fsw._isIgnored(path2) || this.fsw.closed) {
       ready();
       return false;
     }
-    const wh = this.fsw._getWatchHelpers(path);
+    const wh = this.fsw._getWatchHelpers(path2);
     if (priorWh) {
       wh.filterPath = (entry) => priorWh.filterPath(entry);
       wh.filterDir = (entry) => priorWh.filterDir(entry);
@@ -1532,8 +1549,8 @@ var NodeFsHandler = class {
       const follow = this.fsw.options.followSymlinks;
       let closer;
       if (stats.isDirectory()) {
-        const absPath = sysPath.resolve(path);
-        const targetPath = follow ? await fsrealpath(path) : path;
+        const absPath = sp.resolve(path2);
+        const targetPath = follow ? await fsrealpath(path2) : path2;
         if (this.fsw.closed)
           return;
         closer = await this._handleDir(wh.watchPath, stats, initialAdd, depth, target, wh, targetPath);
@@ -1543,42 +1560,42 @@ var NodeFsHandler = class {
           this.fsw._symlinkPaths.set(absPath, targetPath);
         }
       } else if (stats.isSymbolicLink()) {
-        const targetPath = follow ? await fsrealpath(path) : path;
+        const targetPath = follow ? await fsrealpath(path2) : path2;
         if (this.fsw.closed)
           return;
-        const parent = sysPath.dirname(wh.watchPath);
+        const parent = sp.dirname(wh.watchPath);
         this.fsw._getWatchedDir(parent).add(wh.watchPath);
         this.fsw._emit(EV.ADD, wh.watchPath, stats);
-        closer = await this._handleDir(parent, stats, initialAdd, depth, path, wh, targetPath);
+        closer = await this._handleDir(parent, stats, initialAdd, depth, path2, wh, targetPath);
         if (this.fsw.closed)
           return;
         if (targetPath !== void 0) {
-          this.fsw._symlinkPaths.set(sysPath.resolve(path), targetPath);
+          this.fsw._symlinkPaths.set(sp.resolve(path2), targetPath);
         }
       } else {
         closer = this._handleFile(wh.watchPath, stats, initialAdd);
       }
       ready();
       if (closer)
-        this.fsw._addPathCloser(path, closer);
+        this.fsw._addPathCloser(path2, closer);
       return false;
     } catch (error2) {
       if (this.fsw._handleError(error2)) {
         ready();
-        return path;
+        return path2;
       }
     }
   }
 };
 
-// node_modules/chokidar/esm/index.js
+// ccud/node_modules/chokidar/index.js
 var SLASH = "/";
 var SLASH_SLASH = "//";
 var ONE_DOT = ".";
 var TWO_DOTS = "..";
 var STRING_TYPE = "string";
 var BACK_SLASH_RE = /\\/g;
-var DOUBLE_SLASH_RE = /\/\//;
+var DOUBLE_SLASH_RE = /\/\//g;
 var DOT_RE = /\..*\.(sw[px])$|~$|\.subl.*\.tmp/;
 var REPLACER_RE = /^\.[/\\]/;
 function arrify(item) {
@@ -1597,37 +1614,35 @@ function createPattern(matcher) {
       if (matcher.path === string)
         return true;
       if (matcher.recursive) {
-        const relative3 = sysPath2.relative(matcher.path, string);
+        const relative3 = sp2.relative(matcher.path, string);
         if (!relative3) {
           return false;
         }
-        return !relative3.startsWith("..") && !sysPath2.isAbsolute(relative3);
+        return !relative3.startsWith("..") && !sp2.isAbsolute(relative3);
       }
       return false;
     };
   }
   return () => false;
 }
-function normalizePath(path) {
-  if (typeof path !== "string")
+function normalizePath(path2) {
+  if (typeof path2 !== "string")
     throw new Error("string expected");
-  path = sysPath2.normalize(path);
-  path = path.replace(/\\/g, "/");
+  path2 = sp2.normalize(path2);
+  path2 = path2.replace(/\\/g, "/");
   let prepend = false;
-  if (path.startsWith("//"))
+  if (path2.startsWith("//"))
     prepend = true;
-  const DOUBLE_SLASH_RE2 = /\/\//;
-  while (path.match(DOUBLE_SLASH_RE2))
-    path = path.replace(DOUBLE_SLASH_RE2, "/");
+  path2 = path2.replace(DOUBLE_SLASH_RE, "/");
   if (prepend)
-    path = "/" + path;
-  return path;
+    path2 = "/" + path2;
+  return path2;
 }
 function matchPatterns(patterns, testString, stats) {
-  const path = normalizePath(testString);
+  const path2 = normalizePath(testString);
   for (let index = 0; index < patterns.length; index++) {
     const pattern = patterns[index];
-    if (pattern(path, stats)) {
+    if (pattern(path2, stats)) {
       return true;
     }
   }
@@ -1659,30 +1674,31 @@ var toUnix = (string) => {
   if (str.startsWith(SLASH_SLASH)) {
     prepend = true;
   }
-  while (str.match(DOUBLE_SLASH_RE)) {
-    str = str.replace(DOUBLE_SLASH_RE, SLASH);
-  }
+  str = str.replace(DOUBLE_SLASH_RE, SLASH);
   if (prepend) {
     str = SLASH + str;
   }
   return str;
 };
-var normalizePathToUnix = (path) => toUnix(sysPath2.normalize(toUnix(path)));
-var normalizeIgnored = (cwd = "") => (path) => {
-  if (typeof path === "string") {
-    return normalizePathToUnix(sysPath2.isAbsolute(path) ? path : sysPath2.join(cwd, path));
+var normalizePathToUnix = (path2) => toUnix(sp2.normalize(toUnix(path2)));
+var normalizeIgnored = (cwd = "") => (path2) => {
+  if (typeof path2 === "string") {
+    return normalizePathToUnix(sp2.isAbsolute(path2) ? path2 : sp2.join(cwd, path2));
   } else {
-    return path;
+    return path2;
   }
 };
-var getAbsolutePath = (path, cwd) => {
-  if (sysPath2.isAbsolute(path)) {
-    return path;
+var getAbsolutePath = (path2, cwd) => {
+  if (sp2.isAbsolute(path2)) {
+    return path2;
   }
-  return sysPath2.join(cwd, path);
+  return sp2.join(cwd, path2);
 };
 var EMPTY_SET = Object.freeze(/* @__PURE__ */ new Set());
 var DirEntry = class {
+  path;
+  _removeWatcher;
+  items;
   constructor(dir, removeWatcher) {
     this.path = dir;
     this._removeWatcher = removeWatcher;
@@ -1707,7 +1723,7 @@ var DirEntry = class {
       await readdir3(dir);
     } catch (err) {
       if (this._removeWatcher) {
-        this._removeWatcher(sysPath2.dirname(dir), sysPath2.basename(dir));
+        this._removeWatcher(sp2.dirname(dir), sp2.basename(dir));
       }
     }
   }
@@ -1734,12 +1750,19 @@ var DirEntry = class {
 var STAT_METHOD_F = "stat";
 var STAT_METHOD_L = "lstat";
 var WatchHelper = class {
-  constructor(path, follow, fsw) {
+  fsw;
+  path;
+  watchPath;
+  fullWatchPath;
+  dirParts;
+  followSymlinks;
+  statMethod;
+  constructor(path2, follow, fsw) {
     this.fsw = fsw;
-    const watchPath = path;
-    this.path = path = path.replace(REPLACER_RE, "");
+    const watchPath = path2;
+    this.path = path2 = path2.replace(REPLACER_RE, "");
     this.watchPath = watchPath;
-    this.fullWatchPath = sysPath2.resolve(watchPath);
+    this.fullWatchPath = sp2.resolve(watchPath);
     this.dirParts = [];
     this.dirParts.forEach((parts) => {
       if (parts.length > 1)
@@ -1749,7 +1772,7 @@ var WatchHelper = class {
     this.statMethod = follow ? STAT_METHOD_F : STAT_METHOD_L;
   }
   entryPath(entry) {
-    return sysPath2.join(this.watchPath, sysPath2.relative(this.watchPath, entry.fullPath));
+    return sp2.join(this.watchPath, sp2.relative(this.watchPath, entry.fullPath));
   }
   filterPath(entry) {
     const { stats } = entry;
@@ -1763,6 +1786,24 @@ var WatchHelper = class {
   }
 };
 var FSWatcher = class extends EventEmitter {
+  closed;
+  options;
+  _closers;
+  _ignoredPaths;
+  _throttled;
+  _streams;
+  _symlinkPaths;
+  _watched;
+  _pendingWrites;
+  _pendingUnlinks;
+  _readyCount;
+  _emitReady;
+  _closePromise;
+  _userIgnored;
+  _readyEmitted;
+  _emitRaw;
+  _boundRemove;
+  _nodeFsHandler;
   // Not indenting methods for history sake; for now.
   constructor(_opts = {}) {
     super();
@@ -1859,20 +1900,20 @@ var FSWatcher = class extends EventEmitter {
     this._closePromise = void 0;
     let paths = unifyPaths(paths_);
     if (cwd) {
-      paths = paths.map((path) => {
-        const absPath = getAbsolutePath(path, cwd);
+      paths = paths.map((path2) => {
+        const absPath = getAbsolutePath(path2, cwd);
         return absPath;
       });
     }
-    paths.forEach((path) => {
-      this._removeIgnoredPath(path);
+    paths.forEach((path2) => {
+      this._removeIgnoredPath(path2);
     });
     this._userIgnored = void 0;
     if (!this._readyCount)
       this._readyCount = 0;
     this._readyCount += paths.length;
-    Promise.all(paths.map(async (path) => {
-      const res = await this._nodeFsHandler._addToNodeFs(path, !_internal, void 0, 0, _origAdd);
+    Promise.all(paths.map(async (path2) => {
+      const res = await this._nodeFsHandler._addToNodeFs(path2, !_internal, void 0, 0, _origAdd);
       if (res)
         this._emitReady();
       return res;
@@ -1881,7 +1922,7 @@ var FSWatcher = class extends EventEmitter {
         return;
       results.forEach((item) => {
         if (item)
-          this.add(sysPath2.dirname(item), sysPath2.basename(_origAdd || item));
+          this.add(sp2.dirname(item), sp2.basename(_origAdd || item));
       });
     });
     return this;
@@ -1894,17 +1935,17 @@ var FSWatcher = class extends EventEmitter {
       return this;
     const paths = unifyPaths(paths_);
     const { cwd } = this.options;
-    paths.forEach((path) => {
-      if (!sysPath2.isAbsolute(path) && !this._closers.has(path)) {
+    paths.forEach((path2) => {
+      if (!sp2.isAbsolute(path2) && !this._closers.has(path2)) {
         if (cwd)
-          path = sysPath2.join(cwd, path);
-        path = sysPath2.resolve(path);
+          path2 = sp2.join(cwd, path2);
+        path2 = sp2.resolve(path2);
       }
-      this._closePath(path);
-      this._addIgnoredPath(path);
-      if (this._watched.has(path)) {
+      this._closePath(path2);
+      this._addIgnoredPath(path2);
+      if (this._watched.has(path2)) {
         this._addIgnoredPath({
-          path,
+          path: path2,
           recursive: true
         });
       }
@@ -1947,7 +1988,7 @@ var FSWatcher = class extends EventEmitter {
   getWatched() {
     const watchList = {};
     this._watched.forEach((entry, dir) => {
-      const key = this.options.cwd ? sysPath2.relative(this.options.cwd, dir) : dir;
+      const key = this.options.cwd ? sp2.relative(this.options.cwd, dir) : dir;
       const index = key || ONE_DOT;
       watchList[index] = entry.getChildren().sort();
     });
@@ -1968,38 +2009,38 @@ var FSWatcher = class extends EventEmitter {
    * @param stats arguments to be passed with event
    * @returns the error if defined, otherwise the value of the FSWatcher instance's `closed` flag
    */
-  async _emit(event, path, stats) {
+  async _emit(event, path2, stats) {
     if (this.closed)
       return;
     const opts = this.options;
     if (isWindows)
-      path = sysPath2.normalize(path);
+      path2 = sp2.normalize(path2);
     if (opts.cwd)
-      path = sysPath2.relative(opts.cwd, path);
-    const args = [path];
+      path2 = sp2.relative(opts.cwd, path2);
+    const args = [path2];
     if (stats != null)
       args.push(stats);
     const awf = opts.awaitWriteFinish;
     let pw;
-    if (awf && (pw = this._pendingWrites.get(path))) {
+    if (awf && (pw = this._pendingWrites.get(path2))) {
       pw.lastChange = /* @__PURE__ */ new Date();
       return this;
     }
     if (opts.atomic) {
       if (event === EVENTS.UNLINK) {
-        this._pendingUnlinks.set(path, [event, ...args]);
+        this._pendingUnlinks.set(path2, [event, ...args]);
         setTimeout(() => {
-          this._pendingUnlinks.forEach((entry, path2) => {
+          this._pendingUnlinks.forEach((entry, path3) => {
             this.emit(...entry);
             this.emit(EVENTS.ALL, ...entry);
-            this._pendingUnlinks.delete(path2);
+            this._pendingUnlinks.delete(path3);
           });
         }, typeof opts.atomic === "number" ? opts.atomic : 100);
         return this;
       }
-      if (event === EVENTS.ADD && this._pendingUnlinks.has(path)) {
+      if (event === EVENTS.ADD && this._pendingUnlinks.has(path2)) {
         event = EVENTS.CHANGE;
-        this._pendingUnlinks.delete(path);
+        this._pendingUnlinks.delete(path2);
       }
     }
     if (awf && (event === EVENTS.ADD || event === EVENTS.CHANGE) && this._readyEmitted) {
@@ -2017,16 +2058,16 @@ var FSWatcher = class extends EventEmitter {
           this.emitWithAll(event, args);
         }
       };
-      this._awaitWriteFinish(path, awf.stabilityThreshold, event, awfEmit);
+      this._awaitWriteFinish(path2, awf.stabilityThreshold, event, awfEmit);
       return this;
     }
     if (event === EVENTS.CHANGE) {
-      const isThrottled = !this._throttle(EVENTS.CHANGE, path, 50);
+      const isThrottled = !this._throttle(EVENTS.CHANGE, path2, 50);
       if (isThrottled)
         return this;
     }
     if (opts.alwaysStat && stats === void 0 && (event === EVENTS.ADD || event === EVENTS.ADD_DIR || event === EVENTS.CHANGE)) {
-      const fullPath = opts.cwd ? sysPath2.join(opts.cwd, path) : path;
+      const fullPath = opts.cwd ? sp2.join(opts.cwd, path2) : path2;
       let stats2;
       try {
         stats2 = await stat4(fullPath);
@@ -2057,23 +2098,23 @@ var FSWatcher = class extends EventEmitter {
    * @param timeout duration of time to suppress duplicate actions
    * @returns tracking object or false if action should be suppressed
    */
-  _throttle(actionType, path, timeout) {
+  _throttle(actionType, path2, timeout) {
     if (!this._throttled.has(actionType)) {
       this._throttled.set(actionType, /* @__PURE__ */ new Map());
     }
     const action = this._throttled.get(actionType);
     if (!action)
       throw new Error("invalid throttle");
-    const actionPath = action.get(path);
+    const actionPath = action.get(path2);
     if (actionPath) {
       actionPath.count++;
       return false;
     }
     let timeoutObject;
     const clear = () => {
-      const item = action.get(path);
+      const item = action.get(path2);
       const count = item ? item.count : 0;
-      action.delete(path);
+      action.delete(path2);
       clearTimeout(timeoutObject);
       if (item)
         clearTimeout(item.timeoutObject);
@@ -2081,7 +2122,7 @@ var FSWatcher = class extends EventEmitter {
     };
     timeoutObject = setTimeout(clear, timeout);
     const thr = { timeoutObject, clear, count: 0 };
-    action.set(path, thr);
+    action.set(path2, thr);
     return thr;
   }
   _incrReadyCount() {
@@ -2095,44 +2136,44 @@ var FSWatcher = class extends EventEmitter {
    * @param event
    * @param awfEmit Callback to be called when ready for event to be emitted.
    */
-  _awaitWriteFinish(path, threshold, event, awfEmit) {
+  _awaitWriteFinish(path2, threshold, event, awfEmit) {
     const awf = this.options.awaitWriteFinish;
     if (typeof awf !== "object")
       return;
     const pollInterval = awf.pollInterval;
     let timeoutHandler;
-    let fullPath = path;
-    if (this.options.cwd && !sysPath2.isAbsolute(path)) {
-      fullPath = sysPath2.join(this.options.cwd, path);
+    let fullPath = path2;
+    if (this.options.cwd && !sp2.isAbsolute(path2)) {
+      fullPath = sp2.join(this.options.cwd, path2);
     }
     const now = /* @__PURE__ */ new Date();
     const writes = this._pendingWrites;
     function awaitWriteFinishFn(prevStat) {
       statcb(fullPath, (err, curStat) => {
-        if (err || !writes.has(path)) {
+        if (err || !writes.has(path2)) {
           if (err && err.code !== "ENOENT")
             awfEmit(err);
           return;
         }
         const now2 = Number(/* @__PURE__ */ new Date());
         if (prevStat && curStat.size !== prevStat.size) {
-          writes.get(path).lastChange = now2;
+          writes.get(path2).lastChange = now2;
         }
-        const pw = writes.get(path);
+        const pw = writes.get(path2);
         const df = now2 - pw.lastChange;
         if (df >= threshold) {
-          writes.delete(path);
+          writes.delete(path2);
           awfEmit(void 0, curStat);
         } else {
           timeoutHandler = setTimeout(awaitWriteFinishFn, pollInterval, curStat);
         }
       });
     }
-    if (!writes.has(path)) {
-      writes.set(path, {
+    if (!writes.has(path2)) {
+      writes.set(path2, {
         lastChange: now,
         cancelWait: () => {
-          writes.delete(path);
+          writes.delete(path2);
           clearTimeout(timeoutHandler);
           return event;
         }
@@ -2143,8 +2184,8 @@ var FSWatcher = class extends EventEmitter {
   /**
    * Determines whether user has asked to ignore this path.
    */
-  _isIgnored(path, stats) {
-    if (this.options.atomic && DOT_RE.test(path))
+  _isIgnored(path2, stats) {
+    if (this.options.atomic && DOT_RE.test(path2))
       return true;
     if (!this._userIgnored) {
       const { cwd } = this.options;
@@ -2154,17 +2195,17 @@ var FSWatcher = class extends EventEmitter {
       const list = [...ignoredPaths.map(normalizeIgnored(cwd)), ...ignored];
       this._userIgnored = anymatch(list, void 0);
     }
-    return this._userIgnored(path, stats);
+    return this._userIgnored(path2, stats);
   }
-  _isntIgnored(path, stat5) {
-    return !this._isIgnored(path, stat5);
+  _isntIgnored(path2, stat5) {
+    return !this._isIgnored(path2, stat5);
   }
   /**
    * Provides a set of common helpers and properties relating to symlink handling.
    * @param path file or directory pattern being watched
    */
-  _getWatchHelpers(path) {
-    return new WatchHelper(path, this.options.followSymlinks, this);
+  _getWatchHelpers(path2) {
+    return new WatchHelper(path2, this.options.followSymlinks, this);
   }
   // Directory helpers
   // -----------------
@@ -2173,7 +2214,7 @@ var FSWatcher = class extends EventEmitter {
    * @param directory path of the directory
    */
   _getWatchedDir(directory) {
-    const dir = sysPath2.resolve(directory);
+    const dir = sp2.resolve(directory);
     if (!this._watched.has(dir))
       this._watched.set(dir, new DirEntry(dir, this._boundRemove));
     return this._watched.get(dir);
@@ -2196,63 +2237,63 @@ var FSWatcher = class extends EventEmitter {
    * @param item      base path of item/directory
    */
   _remove(directory, item, isDirectory) {
-    const path = sysPath2.join(directory, item);
-    const fullPath = sysPath2.resolve(path);
-    isDirectory = isDirectory != null ? isDirectory : this._watched.has(path) || this._watched.has(fullPath);
-    if (!this._throttle("remove", path, 100))
+    const path2 = sp2.join(directory, item);
+    const fullPath = sp2.resolve(path2);
+    isDirectory = isDirectory != null ? isDirectory : this._watched.has(path2) || this._watched.has(fullPath);
+    if (!this._throttle("remove", path2, 100))
       return;
     if (!isDirectory && this._watched.size === 1) {
       this.add(directory, item, true);
     }
-    const wp = this._getWatchedDir(path);
+    const wp = this._getWatchedDir(path2);
     const nestedDirectoryChildren = wp.getChildren();
-    nestedDirectoryChildren.forEach((nested) => this._remove(path, nested));
+    nestedDirectoryChildren.forEach((nested) => this._remove(path2, nested));
     const parent = this._getWatchedDir(directory);
     const wasTracked = parent.has(item);
     parent.remove(item);
     if (this._symlinkPaths.has(fullPath)) {
       this._symlinkPaths.delete(fullPath);
     }
-    let relPath = path;
+    let relPath = path2;
     if (this.options.cwd)
-      relPath = sysPath2.relative(this.options.cwd, path);
+      relPath = sp2.relative(this.options.cwd, path2);
     if (this.options.awaitWriteFinish && this._pendingWrites.has(relPath)) {
       const event = this._pendingWrites.get(relPath).cancelWait();
       if (event === EVENTS.ADD)
         return;
     }
-    this._watched.delete(path);
+    this._watched.delete(path2);
     this._watched.delete(fullPath);
     const eventName = isDirectory ? EVENTS.UNLINK_DIR : EVENTS.UNLINK;
-    if (wasTracked && !this._isIgnored(path))
-      this._emit(eventName, path);
-    this._closePath(path);
+    if (wasTracked && !this._isIgnored(path2))
+      this._emit(eventName, path2);
+    this._closePath(path2);
   }
   /**
    * Closes all watchers for a path
    */
-  _closePath(path) {
-    this._closeFile(path);
-    const dir = sysPath2.dirname(path);
-    this._getWatchedDir(dir).remove(sysPath2.basename(path));
+  _closePath(path2) {
+    this._closeFile(path2);
+    const dir = sp2.dirname(path2);
+    this._getWatchedDir(dir).remove(sp2.basename(path2));
   }
   /**
    * Closes only file-specific watchers
    */
-  _closeFile(path) {
-    const closers = this._closers.get(path);
+  _closeFile(path2) {
+    const closers = this._closers.get(path2);
     if (!closers)
       return;
     closers.forEach((closer) => closer());
-    this._closers.delete(path);
+    this._closers.delete(path2);
   }
-  _addPathCloser(path, closer) {
+  _addPathCloser(path2, closer) {
     if (!closer)
       return;
-    let list = this._closers.get(path);
+    let list = this._closers.get(path2);
     if (!list) {
       list = [];
-      this._closers.set(path, list);
+      this._closers.set(path2, list);
     }
     list.push(closer);
   }
@@ -2279,7 +2320,7 @@ function watch(paths, options = {}) {
   watcher.add(paths);
   return watcher;
 }
-var esm_default = { watch, FSWatcher };
+var chokidar_default = { watch, FSWatcher };
 
 // ccud/src/handlers/watch.js
 var activeWatchers = /* @__PURE__ */ new Map();
@@ -2303,7 +2344,7 @@ async function handleWatch(method, params, transport2) {
       if (activeWatchers.has(params.path)) {
         return { already: true };
       }
-      const watcher = esm_default.watch(params.path, {
+      const watcher = chokidar_default.watch(params.path, {
         ignored: [
           "**/node_modules/**",
           "**/.git/**",
@@ -2345,20 +2386,261 @@ async function handleWatch(method, params, transport2) {
   }
 }
 function cleanupAllWatchers() {
-  for (const [path, state] of activeWatchers) {
+  for (const [path2, state] of activeWatchers) {
     clearTimeout(state.debounceTimer);
     state.watcher.close().catch(() => {
     });
-    activeWatchers.delete(path);
+    activeWatchers.delete(path2);
   }
 }
 
 // ccud/src/handlers/claude.js
 import { spawn, execFile as execFile2 } from "child_process";
+import { createReadStream } from "fs";
+import { readdir as readdir4, readFile as readFile2, writeFile as writeFile2 } from "fs/promises";
+import os from "os";
+import path from "path";
+import readline from "readline";
 import { promisify as promisify2 } from "util";
 import crypto from "crypto";
 var execFileAsync2 = promisify2(execFile2);
+var claudeProjectsDir = path.join(os.homedir(), ".claude", "projects");
 var activeSessions = /* @__PURE__ */ new Map();
+async function findProjectDirForSession(sessionId, cwd) {
+  let fallbackProjectDir = null;
+  try {
+    const projectEntries = await readdir4(claudeProjectsDir, { withFileTypes: true });
+    for (const entry of projectEntries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+      const projectDir = path.join(claudeProjectsDir, entry.name);
+      let files = [];
+      try {
+        files = await readdir4(projectDir);
+      } catch {
+        continue;
+      }
+      const jsonlFiles = files.filter((file) => file.endsWith(".jsonl") && !file.startsWith("agent-"));
+      for (const file of jsonlFiles) {
+        const jsonlFile = path.join(projectDir, file);
+        const fileStream = createReadStream(jsonlFile);
+        const rl = readline.createInterface({
+          input: fileStream,
+          crlfDelay: Infinity
+        });
+        let matchedSession = false;
+        try {
+          for await (const line of rl) {
+            if (!line.trim()) {
+              continue;
+            }
+            try {
+              const parsed = JSON.parse(line);
+              if (parsed.sessionId !== sessionId) {
+                continue;
+              }
+              matchedSession = true;
+              if (!cwd || parsed.cwd === cwd) {
+                return projectDir;
+              }
+            } catch {
+            }
+          }
+        } finally {
+          rl.close();
+        }
+        if (matchedSession && !fallbackProjectDir) {
+          fallbackProjectDir = projectDir;
+        }
+      }
+    }
+  } catch {
+    return null;
+  }
+  return fallbackProjectDir;
+}
+async function parseAgentTools(filePath) {
+  const tools = [];
+  try {
+    const fileStream = createReadStream(filePath);
+    const rl = readline.createInterface({
+      input: fileStream,
+      crlfDelay: Infinity
+    });
+    for await (const line of rl) {
+      if (!line.trim()) {
+        continue;
+      }
+      try {
+        const entry = JSON.parse(line);
+        if (entry.message?.role === "assistant" && Array.isArray(entry.message?.content)) {
+          for (const part of entry.message.content) {
+            if (part.type === "tool_use") {
+              tools.push({
+                toolId: part.id,
+                toolName: part.name,
+                toolInput: part.input,
+                timestamp: entry.timestamp
+              });
+            }
+          }
+        }
+        if (entry.message?.role === "user" && Array.isArray(entry.message?.content)) {
+          for (const part of entry.message.content) {
+            if (part.type === "tool_result") {
+              const tool = tools.find((candidate) => candidate.toolId === part.tool_use_id);
+              if (tool) {
+                tool.toolResult = {
+                  content: typeof part.content === "string" ? part.content : Array.isArray(part.content) ? part.content.map((content) => content.text || "").join("\n") : JSON.stringify(part.content),
+                  isError: Boolean(part.is_error)
+                };
+              }
+            }
+          }
+        }
+      } catch {
+      }
+    }
+  } catch (error2) {
+    console.warn(`Error parsing agent file ${filePath}:`, error2.message);
+  }
+  return tools;
+}
+async function loadSessionMessages(sessionId, cwd, limit = null, offset = 0) {
+  try {
+    const projectDir = await findProjectDirForSession(sessionId, cwd);
+    if (!projectDir) {
+      return limit === null ? [] : {
+        messages: [],
+        total: 0,
+        hasMore: false,
+        offset,
+        limit
+      };
+    }
+    const files = await readdir4(projectDir);
+    const jsonlFiles = files.filter((file) => file.endsWith(".jsonl") && !file.startsWith("agent-"));
+    const agentFiles = files.filter((file) => file.endsWith(".jsonl") && file.startsWith("agent-"));
+    if (jsonlFiles.length === 0) {
+      return limit === null ? [] : {
+        messages: [],
+        total: 0,
+        hasMore: false,
+        offset,
+        limit
+      };
+    }
+    const messages = [];
+    const agentToolsCache = /* @__PURE__ */ new Map();
+    for (const file of jsonlFiles) {
+      const jsonlFile = path.join(projectDir, file);
+      const fileStream = createReadStream(jsonlFile);
+      const rl = readline.createInterface({
+        input: fileStream,
+        crlfDelay: Infinity
+      });
+      for await (const line of rl) {
+        if (!line.trim()) {
+          continue;
+        }
+        try {
+          const entry = JSON.parse(line);
+          if (entry.sessionId === sessionId) {
+            messages.push(entry);
+          }
+        } catch {
+        }
+      }
+    }
+    const agentIds = /* @__PURE__ */ new Set();
+    for (const message of messages) {
+      if (message.toolUseResult?.agentId) {
+        agentIds.add(message.toolUseResult.agentId);
+      }
+    }
+    for (const agentId of agentIds) {
+      const agentFileName = `agent-${agentId}.jsonl`;
+      if (agentFiles.includes(agentFileName)) {
+        const agentFilePath = path.join(projectDir, agentFileName);
+        const tools = await parseAgentTools(agentFilePath);
+        agentToolsCache.set(agentId, tools);
+      }
+    }
+    for (const message of messages) {
+      if (message.toolUseResult?.agentId) {
+        const agentTools = agentToolsCache.get(message.toolUseResult.agentId);
+        if (agentTools && agentTools.length > 0) {
+          message.subagentTools = agentTools;
+        }
+      }
+    }
+    const sortedMessages = messages.sort(
+      (a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0)
+    );
+    if (limit === null) {
+      return sortedMessages;
+    }
+    const total = sortedMessages.length;
+    const startIndex = Math.max(0, total - offset - limit);
+    const endIndex = total - offset;
+    return {
+      messages: sortedMessages.slice(startIndex, endIndex),
+      total,
+      hasMore: startIndex > 0,
+      offset,
+      limit
+    };
+  } catch (error2) {
+    console.error(`Error reading messages for session ${sessionId}:`, error2);
+    return limit === null ? [] : {
+      messages: [],
+      total: 0,
+      hasMore: false,
+      offset,
+      limit
+    };
+  }
+}
+async function deleteSessionMessages(sessionId, cwd) {
+  const projectDir = await findProjectDirForSession(sessionId, cwd);
+  if (!projectDir) {
+    throw new Error(`Session ${sessionId} not found in any files`);
+  }
+  const files = await readdir4(projectDir);
+  const jsonlFiles = files.filter((file) => file.endsWith(".jsonl"));
+  if (jsonlFiles.length === 0) {
+    throw new Error("No session files found for this project");
+  }
+  for (const file of jsonlFiles) {
+    const jsonlFile = path.join(projectDir, file);
+    const content = await readFile2(jsonlFile, "utf8");
+    const lines = content.split("\n").filter((line) => line.trim());
+    const hasSession = lines.some((line) => {
+      try {
+        return JSON.parse(line).sessionId === sessionId;
+      } catch {
+        return false;
+      }
+    });
+    if (hasSession) {
+      const filteredLines = lines.filter((line) => {
+        try {
+          return JSON.parse(line).sessionId !== sessionId;
+        } catch {
+          return true;
+        }
+      });
+      await writeFile2(
+        jsonlFile,
+        filteredLines.join("\n") + (filteredLines.length > 0 ? "\n" : ""),
+        "utf8"
+      );
+      return true;
+    }
+  }
+  throw new Error(`Session ${sessionId} not found in any files`);
+}
 async function isClaudeAvailable() {
   try {
     await execFileAsync2("command", ["-v", "claude"], { shell: true, timeout: 5e3 });
@@ -2511,6 +2793,27 @@ async function handleClaude(method, params, transport2) {
         return { sessions: [], error: "Failed to list sessions" };
       }
     }
+    case "claude/get-session-messages": {
+      return await loadSessionMessages(
+        params.sessionId,
+        params.cwd,
+        params.limit ?? null,
+        params.offset ?? 0
+      );
+    }
+    case "claude/delete-session": {
+      try {
+        await deleteSessionMessages(params.sessionId, params.cwd);
+        return { deleted: true };
+      } catch (error2) {
+        return {
+          error: {
+            code: -32e3,
+            message: error2.message || "Failed to delete session"
+          }
+        };
+      }
+    }
     default:
       return { error: { code: -32601, message: "Method not found: " + method } };
   }
@@ -2600,6 +2903,6 @@ process.on("exit", cleanup);
 log("Daemon started, PID " + process.pid);
 /*! Bundled license information:
 
-chokidar/esm/index.js:
+chokidar/index.js:
   (*! chokidar - MIT License (c) 2012 Paul Miller (paulmillr.com) *)
 */

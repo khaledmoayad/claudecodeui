@@ -570,6 +570,18 @@ async function getProjects(progressCallback = null) {
         codexSessions: []
       };
 
+      // Remote projects: only hydrate sessions when the host is already connected.
+      // Project discovery should not initiate SSH connections as a side effect.
+      if (projectName.startsWith('remote:')) {
+        try {
+          const result = await getSessions(projectName, 5, 0, { requireReadyConnection: true });
+          project.sessions = result.sessions;
+          project.sessionMeta = { hasMore: result.hasMore, total: result.total };
+        } catch {
+          // Connection may not be ready yet — sessions will load on expand
+        }
+      }
+
       // Try to fetch Cursor sessions for manual projects too
       try {
         project.cursorSessions = await getCursorSessions(actualProjectDir);
@@ -641,10 +653,42 @@ async function getProjects(progressCallback = null) {
   return projects;
 }
 
-async function getSessions(projectName, limit = 5, offset = 0) {
-  // Remote projects store sessions on the remote host, not locally
+async function getSessions(projectName, limit = 5, offset = 0, options = {}) {
+  // Remote projects: fetch sessions from daemon via JSON-RPC
   if (typeof projectName === 'string' && projectName.startsWith('remote:')) {
-    return { sessions: [], hasMore: false, total: 0 };
+    try {
+      const parts = projectName.split(':');
+      const hostId = parts[1];
+      const projectRoot = Buffer.from(parts.slice(2).join(':'), 'base64').toString('utf8');
+      const { requireReadyConnection = false } = options;
+      let conn;
+
+      if (requireReadyConnection) {
+        const { getConnection } = await import('./remote/connection-manager.js');
+        conn = getConnection(hostId);
+        if (!conn?.isReady || !conn.transport) {
+          return { sessions: [], hasMore: false, total: 0 };
+        }
+      } else {
+        const { ensureConnection } = await import('./remote/connection-manager.js');
+        conn = await ensureConnection(hostId);
+      }
+
+      const result = await conn.transport.request('claude/list-sessions', { cwd: projectRoot }, 15000);
+      const allSessions = (result.sessions || []).map(s => ({
+        id: s.session_id || s.id,
+        title: s.title || s.name || 'Session',
+        created: s.created_at || s.created || new Date().toISOString(),
+        updated: s.updated_at || s.updated || new Date().toISOString(),
+        __provider: 'claude',
+      }));
+      applyCustomSessionNames(allSessions, 'claude');
+      const total = allSessions.length;
+      const paged = allSessions.slice(offset, offset + limit);
+      return { sessions: paged, hasMore: offset + limit < total, total };
+    } catch {
+      return { sessions: [], hasMore: false, total: 0 };
+    }
   }
 
   const projectDir = path.join(os.homedir(), '.claude', 'projects', projectName);
@@ -986,9 +1030,35 @@ async function parseAgentTools(filePath) {
 
 // Get messages for a specific session with pagination support
 async function getSessionMessages(projectName, sessionId, limit = null, offset = 0) {
-  // Remote projects store sessions on the remote host, not locally
+  // Remote projects store sessions on the remote host.
   if (typeof projectName === 'string' && projectName.startsWith('remote:')) {
-    return { messages: [], total: 0, hasMore: false };
+    try {
+      const parts = projectName.split(':');
+      const hostId = parts[1];
+      const projectRoot = Buffer.from(parts.slice(2).join(':'), 'base64').toString('utf8');
+      const { ensureConnection } = await import('./remote/connection-manager.js');
+      const conn = await ensureConnection(hostId);
+      const result = await conn.transport.request(
+        'claude/get-session-messages',
+        { cwd: projectRoot, sessionId, limit, offset },
+        30000,
+      );
+
+      if (limit === null) {
+        return Array.isArray(result) ? result : (result.messages || []);
+      }
+
+      return {
+        messages: Array.isArray(result) ? result : (result.messages || []),
+        total: Array.isArray(result) ? result.length : (result.total || 0),
+        hasMore: Array.isArray(result) ? false : Boolean(result.hasMore),
+        offset: Array.isArray(result) ? offset : (result.offset ?? offset),
+        limit: Array.isArray(result) ? limit : (result.limit ?? limit),
+      };
+    } catch (error) {
+      console.error(`Error reading remote messages for session ${sessionId}:`, error);
+      return limit === null ? [] : { messages: [], total: 0, hasMore: false, offset, limit };
+    }
   }
 
   const projectDir = path.join(os.homedir(), '.claude', 'projects', projectName);
@@ -1113,9 +1183,20 @@ async function renameProject(projectName, newDisplayName) {
 
 // Delete a session from a project
 async function deleteSession(projectName, sessionId) {
-  // Remote project sessions are on the remote host -- nothing to delete locally
+  // Remote project sessions are deleted on the remote host via the daemon.
   if (typeof projectName === 'string' && projectName.startsWith('remote:')) {
-    return true;
+    try {
+      const parts = projectName.split(':');
+      const hostId = parts[1];
+      const projectRoot = Buffer.from(parts.slice(2).join(':'), 'base64').toString('utf8');
+      const { ensureConnection } = await import('./remote/connection-manager.js');
+      const conn = await ensureConnection(hostId);
+      await conn.transport.request('claude/delete-session', { cwd: projectRoot, sessionId }, 30000);
+      return true;
+    } catch (error) {
+      console.error(`Error deleting remote session ${sessionId} from project ${projectName}:`, error);
+      throw error;
+    }
   }
 
   const projectDir = path.join(os.homedir(), '.claude', 'projects', projectName);

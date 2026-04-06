@@ -65,7 +65,6 @@ export default function StepRemoteDirectoryPicker({
   }, [hostId]);
 
   const handleNavigate = useCallback((dirPath: string) => {
-    setCurrentBrowsePath(dirPath);
     setPathInput(dirPath);
     fetchEntries(dirPath);
   }, [fetchEntries]);
@@ -88,6 +87,7 @@ export default function StepRemoteDirectoryPicker({
 
   const isAtRoot = currentBrowsePath === '/';
   const isSelected = remotePath === currentBrowsePath && remotePath !== '';
+  const canSelectDirectory = !isLoading && !browseError;
 
   return (
     <div className="space-y-4">
@@ -176,7 +176,7 @@ export default function StepRemoteDirectoryPicker({
         <Button
           variant={isSelected ? 'secondary' : 'outline'}
           onClick={handleSelectDirectory}
-          disabled={isLoading}
+          disabled={!canSelectDirectory}
           className="flex-shrink-0"
         >
           {isSelected ? (

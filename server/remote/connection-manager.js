@@ -392,6 +392,21 @@ export class SSHConnectionManager extends EventEmitter {
 }
 
 /**
+ * Global hook invoked whenever a connection is created (from createConnection or ensureConnection).
+ * Set via setOnConnectionCreated(). Used by the server to attach WebSocket broadcast listeners.
+ * @type {((mgr: SSHConnectionManager, hostId: string) => void) | null}
+ */
+let globalOnConnectionCreated = null;
+
+/**
+ * Register a global callback for new connections.
+ * @param {(mgr: SSHConnectionManager, hostId: string) => void} callback
+ */
+export function setOnConnectionCreated(callback) {
+  globalOnConnectionCreated = callback;
+}
+
+/**
  * Get an active connection by host ID.
  * @param {string} hostId
  * @returns {SSHConnectionManager|null}
@@ -411,6 +426,9 @@ export function createConnection(hostConfig) {
   }
   const manager = new SSHConnectionManager(hostConfig);
   activeConnections.set(hostConfig.id, manager);
+  if (globalOnConnectionCreated) {
+    globalOnConnectionCreated(manager, hostConfig.id);
+  }
   return manager;
 }
 

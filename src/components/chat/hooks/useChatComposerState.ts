@@ -504,7 +504,7 @@ export function useChatComposerState({
         });
 
         try {
-          const response = await authenticatedFetch(`/api/projects/${selectedProject.name}/upload-images`, {
+          const response = await authenticatedFetch(`/api/projects/${encodeURIComponent(selectedProject.name)}/upload-images`, {
             method: 'POST',
             headers: {},
             body: formData,
