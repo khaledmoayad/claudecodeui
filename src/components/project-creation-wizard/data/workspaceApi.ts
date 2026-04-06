@@ -1,9 +1,12 @@
 import { api } from '../../../utils/api';
 import type {
+  BrowseFilesystemResponse,
   CloneProgressEvent,
+  CreateFolderResponse,
   CreateWorkspacePayload,
   CreateWorkspaceResponse,
   CredentialsResponse,
+  FolderSuggestion,
   TokenMode,
 } from '../types';
 
@@ -33,6 +36,32 @@ export const fetchGithubTokenCredentials = async () => {
   }
 
   return (data.credentials || []).filter((credential) => credential.is_active);
+};
+
+export const browseFilesystemFolders = async (pathToBrowse: string) => {
+  const endpoint = `/browse-filesystem?path=${encodeURIComponent(pathToBrowse)}`;
+  const response = await api.get(endpoint);
+  const data = await parseJson<BrowseFilesystemResponse>(response);
+
+  if (!response.ok) {
+    throw new Error(data.error || 'Failed to browse filesystem');
+  }
+
+  return {
+    path: data.path || pathToBrowse,
+    suggestions: (data.suggestions || []) as FolderSuggestion[],
+  };
+};
+
+export const createFolderInFilesystem = async (folderPath: string) => {
+  const response = await api.createFolder(folderPath);
+  const data = await parseJson<CreateFolderResponse>(response);
+
+  if (!response.ok) {
+    throw new Error(data.error || 'Failed to create folder');
+  }
+
+  return data.path || folderPath;
 };
 
 export const createWorkspaceRequest = async (payload: CreateWorkspacePayload) => {
