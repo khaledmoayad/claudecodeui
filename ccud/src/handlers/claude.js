@@ -22,6 +22,24 @@ const activeSessions = new Map();
 async function findProjectDirForSession(sessionId, cwd) {
   let fallbackProjectDir = null;
 
+  // Fast path: try the directory derived from cwd first
+  if (cwd) {
+    const dirName = cwd.replace(/\//g, '-');
+    const candidateDir = path.join(claudeProjectsDir, dirName);
+    try {
+      const files = await readdir(candidateDir);
+      const jsonlFiles = files.filter((f) => f.endsWith('.jsonl') && !f.startsWith('agent-'));
+      for (const file of jsonlFiles) {
+        const content = await readFile(path.join(candidateDir, file), 'utf8');
+        if (content.includes(sessionId)) {
+          return candidateDir;
+        }
+      }
+    } catch {
+      // Directory doesn't exist, fall through to full scan
+    }
+  }
+
   try {
     const projectEntries = await readdir(claudeProjectsDir, { withFileTypes: true });
 
@@ -256,8 +274,8 @@ async function loadSessionMessages(sessionId, cwd, limit = null, offset = 0) {
 
 /**
  * List sessions for a project directory by scanning JSONL files.
- * Discovers the project directory from ~/.claude/projects/ matching the cwd,
- * then extracts session metadata from the JSONL entries.
+ * The Claude CLI stores sessions in ~/.claude/projects/<dir-name>/ where
+ * <dir-name> is the cwd with '/' replaced by '-'.
  * @param {string} cwd - The project working directory
  * @returns {Promise<Array<{id: string, title: string, created: string, updated: string}>>}
  */
@@ -265,115 +283,76 @@ async function listSessions(cwd) {
   const sessions = new Map();
 
   try {
-    const projectEntries = await readdir(claudeProjectsDir, { withFileTypes: true });
+    // Claude CLI directory naming: /home/ubuntu/foo → -home-ubuntu-foo
+    const dirName = cwd.replace(/\//g, '-');
+    const projectDir = path.join(claudeProjectsDir, dirName);
 
-    for (const entry of projectEntries) {
-      if (!entry.isDirectory()) continue;
+    let files;
+    try {
+      files = await readdir(projectDir);
+    } catch {
+      return [];
+    }
 
-      const projectDir = path.join(claudeProjectsDir, entry.name);
-      let files;
+    const jsonlFiles = files.filter((f) => f.endsWith('.jsonl') && !f.startsWith('agent-'));
+    if (jsonlFiles.length === 0) return [];
+
+    for (const file of jsonlFiles) {
+      const jsonlFile = path.join(projectDir, file);
+      const fileStream = createReadStream(jsonlFile);
+      const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
+
       try {
-        files = await readdir(projectDir);
-      } catch {
-        continue;
-      }
+        for await (const line of rl) {
+          if (!line.trim()) continue;
+          try {
+            const parsed = JSON.parse(line);
+            if (!parsed.sessionId) continue;
 
-      const jsonlFiles = files.filter((f) => f.endsWith('.jsonl') && !f.startsWith('agent-'));
-      if (jsonlFiles.length === 0) continue;
+            const existing = sessions.get(parsed.sessionId);
+            const ts = parsed.timestamp || null;
 
-      // Check if this project directory matches the cwd
-      let matchesCwd = false;
-      for (const file of jsonlFiles) {
-        const jsonlFile = path.join(projectDir, file);
-        const fileStream = createReadStream(jsonlFile);
-        const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
-
-        try {
-          for await (const line of rl) {
-            if (!line.trim()) continue;
-            try {
-              const parsed = JSON.parse(line);
-              if (parsed.cwd === cwd) {
-                matchesCwd = true;
-              }
-              if (matchesCwd) break;
-            } catch { /* skip malformed */ }
-          }
-        } finally {
-          rl.close();
-        }
-
-        if (matchesCwd) break;
-      }
-
-      if (!matchesCwd) continue;
-
-      // Extract session metadata from all JSONL files in this project dir
-      for (const file of jsonlFiles) {
-        const jsonlFile = path.join(projectDir, file);
-        const fileStream = createReadStream(jsonlFile);
-        const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
-
-        try {
-          for await (const line of rl) {
-            if (!line.trim()) continue;
-            try {
-              const parsed = JSON.parse(line);
-              if (!parsed.sessionId) continue;
-              // Only include sessions for this cwd
-              if (parsed.cwd && parsed.cwd !== cwd) continue;
-
-              const existing = sessions.get(parsed.sessionId);
-              const ts = parsed.timestamp || null;
-
-              if (!existing) {
-                // First user message becomes the title
-                let title = 'Session';
-                if (parsed.type === 'user' && parsed.message?.content) {
-                  const content = parsed.message.content;
-                  if (typeof content === 'string') {
-                    title = content.slice(0, 100);
-                  } else if (Array.isArray(content)) {
-                    const textBlock = content.find((b) => b.type === 'text' && b.text);
-                    if (textBlock) title = textBlock.text.slice(0, 100);
-                  }
-                }
-                sessions.set(parsed.sessionId, {
-                  id: parsed.sessionId,
-                  title,
-                  created: ts || new Date().toISOString(),
-                  updated: ts || new Date().toISOString(),
-                });
-              } else if (ts) {
-                // Update the latest timestamp
-                if (ts > existing.updated) existing.updated = ts;
-                if (ts < existing.created) existing.created = ts;
-                // Update title from first user message if current title is generic
-                if (existing.title === 'Session' && parsed.type === 'user' && parsed.message?.content) {
-                  const content = parsed.message.content;
-                  if (typeof content === 'string') {
-                    existing.title = content.slice(0, 100);
-                  } else if (Array.isArray(content)) {
-                    const textBlock = content.find((b) => b.type === 'text' && b.text);
-                    if (textBlock) existing.title = textBlock.text.slice(0, 100);
-                  }
+            if (!existing) {
+              let title = 'Session';
+              if (parsed.type === 'user' && parsed.message?.content) {
+                const content = parsed.message.content;
+                if (typeof content === 'string') {
+                  title = content.slice(0, 100);
+                } else if (Array.isArray(content)) {
+                  const textBlock = content.find((b) => b.type === 'text' && b.text);
+                  if (textBlock) title = textBlock.text.slice(0, 100);
                 }
               }
-            } catch { /* skip malformed */ }
-          }
-        } finally {
-          rl.close();
+              sessions.set(parsed.sessionId, {
+                id: parsed.sessionId,
+                title,
+                created: ts || new Date().toISOString(),
+                updated: ts || new Date().toISOString(),
+              });
+            } else {
+              if (ts && ts > existing.updated) existing.updated = ts;
+              if (ts && ts < existing.created) existing.created = ts;
+              // Update title from first user message if still generic
+              if (existing.title === 'Session' && parsed.type === 'user' && parsed.message?.content) {
+                const content = parsed.message.content;
+                if (typeof content === 'string') {
+                  existing.title = content.slice(0, 100);
+                } else if (Array.isArray(content)) {
+                  const textBlock = content.find((b) => b.type === 'text' && b.text);
+                  if (textBlock) existing.title = textBlock.text.slice(0, 100);
+                }
+              }
+            }
+          } catch { /* skip malformed */ }
         }
+      } finally {
+        rl.close();
       }
-
-      // Only scan the first matching project directory
-      break;
     }
   } catch {
     return [];
   }
 
-  // Sort by updated descending
   return [...sessions.values()].sort((a, b) =>
     new Date(b.updated) - new Date(a.updated),
   );
