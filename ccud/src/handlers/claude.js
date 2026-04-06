@@ -466,6 +466,7 @@ async function isClaudeAvailable() {
  * - claude/list-sessions: List existing Claude sessions in a directory
  * - claude/get-session-messages: Load persisted JSONL entries for a session
  * - claude/delete-session: Delete persisted JSONL entries for a session
+ * - claude/get-token-usage: Read token usage from the latest assistant message in session JSONL
  *
  * @param {string} method - The RPC method name (e.g., 'claude/start')
  * @param {object} params - Method parameters
@@ -669,6 +670,248 @@ export async function handleClaude(method, params, transport) {
           },
         };
       }
+    }
+
+    case 'claude/get-token-usage': {
+      const emptyUsage = {
+        used: 0,
+        total: 160000,
+        breakdown: { input: 0, cacheCreation: 0, cacheRead: 0 },
+      };
+
+      try {
+        const projectDir = await findProjectDirForSession(params.sessionId, params.cwd);
+        if (!projectDir) {
+          return emptyUsage;
+        }
+
+        const files = await readdir(projectDir);
+        const jsonlFiles = files.filter((f) => f.endsWith('.jsonl') && !f.startsWith('agent-'));
+
+        for (const file of jsonlFiles) {
+          const filePath = path.join(projectDir, file);
+          const content = await readFile(filePath, 'utf8');
+          const lines = content.split('\n').filter((line) => line.trim());
+
+          // Scan from the end to find the latest assistant message with usage data
+          for (let i = lines.length - 1; i >= 0; i--) {
+            try {
+              const entry = JSON.parse(lines[i]);
+              if (entry.sessionId !== params.sessionId) continue;
+              if (entry.message?.role !== 'assistant' || !entry.message?.usage) continue;
+
+              const usage = entry.message.usage;
+              const inputTokens = usage.input_tokens || 0;
+              const cacheCreation = usage.cache_creation_input_tokens || 0;
+              const cacheRead = usage.cache_read_input_tokens || 0;
+
+              return {
+                used: inputTokens + cacheCreation + cacheRead,
+                total: 160000,
+                breakdown: {
+                  input: inputTokens,
+                  cacheCreation,
+                  cacheRead,
+                },
+              };
+            } catch {
+              // Skip malformed lines
+            }
+          }
+        }
+
+        return emptyUsage;
+      } catch (error) {
+        console.error(`Error reading token usage for session ${params.sessionId}:`, error);
+        return emptyUsage;
+      }
+    }
+
+    case 'claude/search-conversations': {
+      const { cwd, query, limit: maxResults = 50 } = params;
+      if (!cwd || !query) {
+        return { error: { code: -32602, message: 'Missing required params: cwd, query' } };
+      }
+
+      const dirName = cwd.replace(/\//g, '-');
+      const projectDir = path.join(claudeProjectsDir, dirName);
+
+      const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+      const words = query.trim().split(/\s+/).filter(Boolean);
+      if (words.length === 0) {
+        return { results: [], totalMatches: 0, query };
+      }
+
+      const wordPatterns = words.map((w) =>
+        new RegExp('(?<!\\p{L})' + escapeRegex(w) + '(?!\\p{L})', 'iu'),
+      );
+
+      let files;
+      try {
+        files = await readdir(projectDir);
+      } catch {
+        return { results: [], totalMatches: 0, query };
+      }
+
+      const jsonlFiles = files.filter((f) => f.endsWith('.jsonl') && !f.startsWith('agent-'));
+      if (jsonlFiles.length === 0) {
+        return { results: [], totalMatches: 0, query };
+      }
+
+      // sessionId -> { matches: [], lastUserMessage: string|null }
+      const sessionData = new Map();
+      let totalMatches = 0;
+
+      for (const file of jsonlFiles) {
+        if (totalMatches >= maxResults) break;
+
+        const jsonlFile = path.join(projectDir, file);
+        const fileStream = createReadStream(jsonlFile);
+        const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
+
+        try {
+          for await (const line of rl) {
+            if (totalMatches >= maxResults) break;
+            if (!line.trim()) continue;
+
+            let entry;
+            try {
+              entry = JSON.parse(line);
+            } catch {
+              continue;
+            }
+
+            if (!entry.sessionId) continue;
+
+            const role = entry.type === 'user' ? 'user'
+              : entry.type === 'assistant' ? 'assistant'
+                : null;
+            if (!role) continue;
+
+            // Extract text from message content
+            const content = entry.message?.content;
+            let text = null;
+            if (typeof content === 'string') {
+              text = content;
+            } else if (Array.isArray(content)) {
+              const textParts = [];
+              for (const block of content) {
+                if (block.type === 'text' && block.text) {
+                  textParts.push(block.text);
+                }
+              }
+              if (textParts.length > 0) text = textParts.join(' ');
+            }
+            if (!text) continue;
+
+            // Track last user message per session (skip system messages)
+            if (role === 'user') {
+              const isSystem = text.startsWith('<command-name>') ||
+                text.startsWith('<system-reminder>') ||
+                text.startsWith('Caveat:') ||
+                text === 'Warmup' ||
+                text.startsWith('Warmup');
+              if (!isSystem) {
+                if (!sessionData.has(entry.sessionId)) {
+                  sessionData.set(entry.sessionId, { matches: [], lastUserMessage: null });
+                }
+                sessionData.get(entry.sessionId).lastUserMessage = text;
+              }
+            }
+
+            // Skip system messages for search matching
+            if (text.startsWith('<command-name>') ||
+                text.startsWith('<system-reminder>') ||
+                text.startsWith('Caveat:') ||
+                text === 'Warmup' ||
+                text.startsWith('Warmup')) {
+              continue;
+            }
+
+            // AND logic: every word must appear in the text
+            const allMatch = wordPatterns.every((pattern) => pattern.test(text));
+            if (!allMatch) continue;
+
+            if (!sessionData.has(entry.sessionId)) {
+              sessionData.set(entry.sessionId, { matches: [], lastUserMessage: null });
+            }
+            const session = sessionData.get(entry.sessionId);
+
+            // Max 2 matches per session
+            if (session.matches.length >= 2) continue;
+
+            // Build 150-char snippet centered on the first matched word
+            const firstMatch = wordPatterns[0].exec(text);
+            const matchPos = firstMatch ? firstMatch.index : 0;
+            const snippetLength = 150;
+            const halfSnippet = Math.floor(snippetLength / 2);
+
+            let snippetStart = Math.max(0, matchPos - halfSnippet);
+            let snippetEnd = Math.min(text.length, snippetStart + snippetLength);
+            if (snippetEnd - snippetStart < snippetLength && snippetStart > 0) {
+              snippetStart = Math.max(0, snippetEnd - snippetLength);
+            }
+
+            let snippet = text.substring(snippetStart, snippetEnd);
+            const prefix = snippetStart > 0 ? '...' : '';
+            const suffix = snippetEnd < text.length ? '...' : '';
+            snippet = prefix + snippet + suffix;
+
+            // Compute highlight positions within the snippet
+            const highlights = [];
+            for (const pattern of wordPatterns) {
+              const globalPattern = new RegExp(pattern.source, 'giu');
+              let match;
+              while ((match = globalPattern.exec(snippet)) !== null) {
+                highlights.push({ start: match.index, end: match.index + match[0].length });
+              }
+            }
+
+            // Sort and merge overlapping highlights
+            highlights.sort((a, b) => a.start - b.start || a.end - b.end);
+            const merged = [];
+            for (const h of highlights) {
+              if (merged.length > 0 && h.start <= merged[merged.length - 1].end) {
+                merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, h.end);
+              } else {
+                merged.push({ ...h });
+              }
+            }
+
+            session.matches.push({
+              role,
+              snippet,
+              highlights: merged,
+              timestamp: entry.timestamp || null,
+              provider: 'claude',
+              messageUuid: entry.uuid || null,
+            });
+            totalMatches++;
+          }
+        } finally {
+          rl.close();
+        }
+      }
+
+      // Build results array
+      const results = [];
+      for (const [sessionId, data] of sessionData) {
+        if (data.matches.length === 0) continue;
+        const summary = data.lastUserMessage
+          ? (data.lastUserMessage.length > 50
+            ? data.lastUserMessage.substring(0, 50) + '...'
+            : data.lastUserMessage)
+          : 'New Session';
+        results.push({
+          sessionId,
+          provider: 'claude',
+          sessionSummary: summary,
+          matches: data.matches,
+        });
+      }
+
+      return { results, totalMatches, query };
     }
 
     default:

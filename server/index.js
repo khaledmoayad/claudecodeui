@@ -974,6 +974,7 @@ app.get('/api/search/conversations', authenticateToken, async (req, res) => {
     req.on('close', () => { closed = true; abortController.abort(); });
 
     try {
+        // Search local projects
         await searchConversations(query, limit, ({ projectResult, totalMatches, scannedProjects, totalProjects }) => {
             if (closed) return;
             if (projectResult) {
@@ -982,6 +983,47 @@ app.get('/api/search/conversations', authenticateToken, async (req, res) => {
                 res.write(`event: progress\ndata: ${JSON.stringify({ totalMatches, scannedProjects, totalProjects })}\n\n`);
             }
         }, abortController.signal);
+
+        // Search remote projects via daemon
+        if (!closed && !abortController.signal.aborted) {
+            try {
+                const config = await loadProjectConfig();
+                const remoteProjects = Object.entries(config || {}).filter(
+                    ([name, cfg]) => cfg?.isRemote && name.startsWith('remote:'),
+                );
+                for (const [projectName, projectConfig] of remoteProjects) {
+                    if (closed || abortController.signal.aborted) break;
+                    try {
+                        const parts = projectName.split(':');
+                        const hostId = parts[1];
+                        const projectRoot = Buffer.from(parts.slice(2).join(':'), 'base64').toString('utf8');
+                        const conn = getConnection(hostId);
+                        if (!conn?.isReady) continue;
+                        const result = await conn.transport.request(
+                            'claude/search-conversations',
+                            { cwd: projectRoot, query, limit },
+                            15000,
+                        );
+                        if (result?.results?.length > 0) {
+                            const displayName = projectConfig.displayName || projectRoot.split('/').pop() || projectRoot;
+                            const projectResult = {
+                                projectName,
+                                projectDisplayName: displayName + ' (remote)',
+                                sessions: result.results,
+                            };
+                            if (!closed) {
+                                res.write(`event: result\ndata: ${JSON.stringify({ projectResult, totalMatches: result.totalMatches, scannedProjects: 0, totalProjects: 0 })}\n\n`);
+                            }
+                        }
+                    } catch {
+                        // Skip failed remote searches
+                    }
+                }
+            } catch {
+                // Skip remote search errors entirely
+            }
+        }
+
         if (!closed) {
             res.write(`event: done\ndata: {}\n\n`);
         }
@@ -3245,15 +3287,27 @@ app.get('/api/projects/:projectName/sessions/:sessionId/token-usage', authentica
             });
         }
 
-        // Remote projects store sessions on the remote host -- no local token data
+        // Remote projects: delegate token usage to daemon
         if (typeof projectName === 'string' && projectName.startsWith('remote:')) {
-            return res.json({
-                used: 0,
-                total: 0,
-                breakdown: { input: 0, cacheCreation: 0, cacheRead: 0 },
-                unsupported: true,
-                message: 'Token usage tracking not yet available for remote sessions',
-            });
+            try {
+                const parts = projectName.split(':');
+                const hostId = parts[1];
+                const projectRoot = Buffer.from(parts.slice(2).join(':'), 'base64').toString('utf8');
+                const { ensureConnection } = await import('./remote/connection-manager.js');
+                const conn = await ensureConnection(hostId);
+                const result = await conn.transport.request(
+                    'claude/get-token-usage',
+                    { sessionId: safeSessionId, cwd: projectRoot },
+                    15000,
+                );
+                return res.json(result);
+            } catch {
+                return res.json({
+                    used: 0,
+                    total: 160000,
+                    breakdown: { input: 0, cacheCreation: 0, cacheRead: 0 },
+                });
+            }
         }
 
         // Handle Claude sessions (default)
