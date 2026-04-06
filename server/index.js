@@ -2245,7 +2245,6 @@ function handleChatConnection(ws, request) {
                 console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
 
                 const hostId = data.options?.hostId || await resolveRemoteHostIdFromProjectPath(data.options?.projectPath || data.options?.cwd);
-                console.log('[DEBUG] Claude route:', hostId ? `remote (${hostId})` : 'local');
                 if (hostId) {
                     // Remote Claude session -- delegate to daemon
                     if (!data.options) data.options = {};
