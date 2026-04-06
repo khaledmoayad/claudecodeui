@@ -13,7 +13,8 @@ export const isRemoteProject = (project: ProjectLike | null | undefined): boolea
  */
 export const extractHostId = (project: ProjectLike): string | null => {
   if (!project.name.startsWith('remote:')) return null;
-  return project.name.split(':')[1] ?? null;
+  const hostId = project.name.split(':')[1];
+  return hostId || null;
 };
 
 /**

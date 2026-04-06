@@ -4,8 +4,25 @@
  * Produces FileTreeNode output matching server's getFileTree shape.
  */
 import { readFile, writeFile, mkdir, rename, unlink, rm, stat, readdir, access } from 'fs/promises';
-import { join, dirname } from 'path';
+import path, { join, dirname } from 'path';
 import { constants } from 'fs';
+
+/**
+ * Validate that a file path does not escape the project root.
+ * @param {string} filePath - The path to validate
+ * @param {string} projectRoot - The project root directory
+ * @returns {{ resolved: string } | { error: { code: number, message: string } }}
+ */
+function validatePath(filePath, projectRoot) {
+  const resolved = path.isAbsolute(filePath)
+    ? path.resolve(filePath)
+    : path.resolve(projectRoot, filePath);
+  const root = path.resolve(projectRoot);
+  if (!resolved.startsWith(root + path.sep) && resolved !== root) {
+    return { error: { code: -32001, message: 'Path outside project root' } };
+  }
+  return { resolved };
+}
 
 /**
  * Maps Node.js filesystem error codes to JSON-RPC error codes.
@@ -69,6 +86,9 @@ async function getFileTree(dirPath, maxDepth, currentDepth, showHidden) {
         entry.name === '.git' ||
         entry.name === '.svn' ||
         entry.name === '.hg') continue;
+
+      // Filter hidden files/directories when showHidden is false
+      if (!showHidden && entry.name.startsWith('.')) continue;
 
       const itemPath = join(dirPath, entry.name);
       const item = {
@@ -148,8 +168,11 @@ export async function handleFs(method, params) {
   try {
     switch (method) {
       case 'fs/readdir': {
+        const base = params.cwd || params.path;
+        const v = validatePath(params.path, base);
+        if (v.error) return v;
         return await getFileTree(
-          params.path,
+          v.resolved,
           params.maxDepth ?? 10,
           0,
           params.showHidden ?? true,
@@ -157,16 +180,31 @@ export async function handleFs(method, params) {
       }
 
       case 'fs/readFile': {
+        if (params.cwd) {
+          const v = validatePath(params.path, params.cwd);
+          if (v.error) return v;
+          params.path = v.resolved;
+        }
         const content = await readFile(params.path, 'utf8');
         return { content };
       }
 
       case 'fs/writeFile': {
+        if (params.cwd) {
+          const v = validatePath(params.path, params.cwd);
+          if (v.error) return v;
+          params.path = v.resolved;
+        }
         await writeFile(params.path, params.content, 'utf8');
         return { success: true };
       }
 
       case 'fs/stat': {
+        if (params.cwd) {
+          const v = validatePath(params.path, params.cwd);
+          if (v.error) return v;
+          params.path = v.resolved;
+        }
         const stats = await stat(params.path);
         const mode = stats.mode;
         const ownerPerm = (mode >> 6) & 7;
@@ -183,28 +221,45 @@ export async function handleFs(method, params) {
 
       case 'fs/create': {
         const fullPath = join(params.path, params.name);
+        const base = params.cwd || params.path;
+        const vCreate = validatePath(fullPath, base);
+        if (vCreate.error) return vCreate;
         if (params.type === 'directory') {
-          await mkdir(fullPath, { recursive: false });
+          await mkdir(vCreate.resolved, { recursive: true });
         } else {
           // Ensure parent directory exists
-          const parentDir = dirname(fullPath);
+          const parentDir = dirname(vCreate.resolved);
           try {
             await access(parentDir);
           } catch {
             await mkdir(parentDir, { recursive: true });
           }
-          await writeFile(fullPath, '', 'utf8');
+          await writeFile(vCreate.resolved, '', 'utf8');
         }
-        return { path: fullPath, name: params.name, type: params.type };
+        return { path: vCreate.resolved, name: params.name, type: params.type };
       }
 
       case 'fs/rename': {
+        if (params.cwd) {
+          const vOld = validatePath(params.oldPath, params.cwd);
+          if (vOld.error) return vOld;
+          params.oldPath = vOld.resolved;
+        }
         const newPath = join(dirname(params.oldPath), params.newName);
+        if (params.cwd) {
+          const vNew = validatePath(newPath, params.cwd);
+          if (vNew.error) return vNew;
+        }
         await rename(params.oldPath, newPath);
         return { oldPath: params.oldPath, newPath, newName: params.newName };
       }
 
       case 'fs/delete': {
+        if (params.cwd) {
+          const v = validatePath(params.path, params.cwd);
+          if (v.error) return v;
+          params.path = v.resolved;
+        }
         const s = await stat(params.path);
         if (s.isDirectory()) {
           await rm(params.path, { recursive: true, force: true });
@@ -215,6 +270,11 @@ export async function handleFs(method, params) {
       }
 
       case 'fs/exists': {
+        if (params.cwd) {
+          const v = validatePath(params.path, params.cwd);
+          if (v.error) return v;
+          params.path = v.resolved;
+        }
         try {
           await access(params.path);
           return { exists: true };

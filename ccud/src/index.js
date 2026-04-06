@@ -28,51 +28,56 @@ async function processSingleMessage(msg) {
   // If msg has no id property, it's a notification -- process but return null
   const isNotification = msg.id === undefined || msg.id === null;
 
-  let result;
-  let errorResult;
+  try {
+    let result;
+    let errorResult;
 
-  if (msg.method === 'initialize') {
-    result = handleInitialize(msg.params);
-  } else if (msg.method.startsWith('fs/')) {
-    const fsResult = await handleFs(msg.method, msg.params);
-    if (fsResult.error) {
-      errorResult = fsResult.error;
+    if (msg.method === 'initialize') {
+      result = handleInitialize(msg.params);
+    } else if (msg.method.startsWith('fs/')) {
+      const fsResult = await handleFs(msg.method, msg.params);
+      if (fsResult.error) {
+        errorResult = fsResult.error;
+      } else {
+        result = fsResult;
+      }
+    } else if (msg.method.startsWith('git/')) {
+      const gitResult = await handleGit(msg.method, msg.params);
+      if (gitResult.error) {
+        errorResult = gitResult.error;
+      } else {
+        result = gitResult;
+      }
+    } else if (msg.method.startsWith('watch/')) {
+      const watchResult = await handleWatch(msg.method, msg.params, transport);
+      if (watchResult.error) {
+        errorResult = watchResult.error;
+      } else {
+        result = watchResult;
+      }
+    } else if (msg.method.startsWith('claude/')) {
+      const claudeResult = await handleClaude(msg.method, msg.params, transport);
+      if (claudeResult.error) {
+        errorResult = claudeResult.error;
+      } else {
+        result = claudeResult;
+      }
     } else {
-      result = fsResult;
+      errorResult = { code: -32601, message: 'Method not found' };
     }
-  } else if (msg.method.startsWith('git/')) {
-    const gitResult = await handleGit(msg.method, msg.params);
-    if (gitResult.error) {
-      errorResult = gitResult.error;
-    } else {
-      result = gitResult;
+
+    // Notifications get no response
+    if (isNotification) return null;
+
+    if (errorResult) {
+      return jsonrpc.error(msg.id, new jsonrpc.JsonRpcError(errorResult.message, errorResult.code));
     }
-  } else if (msg.method.startsWith('watch/')) {
-    const watchResult = await handleWatch(msg.method, msg.params, transport);
-    if (watchResult.error) {
-      errorResult = watchResult.error;
-    } else {
-      result = watchResult;
-    }
-  } else if (msg.method.startsWith('claude/')) {
-    const claudeResult = await handleClaude(msg.method, msg.params, transport);
-    if (claudeResult.error) {
-      errorResult = claudeResult.error;
-    } else {
-      result = claudeResult;
-    }
-  } else {
-    errorResult = { code: -32601, message: 'Method not found' };
+
+    return jsonrpc.success(msg.id, result);
+  } catch (err) {
+    if (isNotification) return null;
+    return jsonrpc.error(msg.id, new jsonrpc.JsonRpcError(err.message || 'Internal error', -32603));
   }
-
-  // Notifications get no response
-  if (isNotification) return null;
-
-  if (errorResult) {
-    return jsonrpc.error(msg.id, new jsonrpc.JsonRpcError(errorResult.message, errorResult.code));
-  }
-
-  return jsonrpc.success(msg.id, result);
 }
 
 /**
@@ -82,7 +87,8 @@ async function processSingleMessage(msg) {
 async function handleIncoming(msg) {
   if (Array.isArray(msg)) {
     // Batch request: process all in parallel, return array of responses
-    const results = await Promise.all(msg.map((m) => processSingleMessage(m)));
+    const settled = await Promise.allSettled(msg.map((m) => processSingleMessage(m)));
+    const results = settled.map((r) => r.status === 'fulfilled' ? r.value : null);
     const responses = results.filter(Boolean); // Filter out notification responses (null)
     if (responses.length) transport.send(responses);
     return;
@@ -117,8 +123,8 @@ process.on('unhandledRejection', (reason) => {
 });
 
 // Signal handlers
-process.on('SIGTERM', cleanup);
-process.on('SIGINT', cleanup);
+process.on('SIGTERM', () => { cleanup(); process.exit(0); });
+process.on('SIGINT', () => { cleanup(); process.exit(0); });
 process.on('exit', cleanup);
 
 log('Daemon started, PID ' + process.pid);

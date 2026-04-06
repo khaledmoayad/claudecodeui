@@ -5,6 +5,7 @@
  * @module remote/project-resolver
  */
 
+import path from 'path';
 import { remoteHostsDb } from './remote-hosts-db.js';
 import { extractProjectDirectory } from '../projects.js';
 
@@ -42,6 +43,9 @@ export async function resolveProject(projectName) {
     const hostId = parts[1];
     const encoded = parts.slice(2).join(':');
     const remotePath = Buffer.from(encoded, 'base64').toString('utf8');
+    if (!remotePath || !path.isAbsolute(remotePath)) {
+      throw new Error('Invalid remote project path');
+    }
 
     const host = remoteHostsDb.getById(hostId);
     if (!host) {

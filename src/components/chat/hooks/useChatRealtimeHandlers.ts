@@ -283,11 +283,9 @@ export function useChatRealtimeHandlers({
         if (pendingSessionId && msg.exitCode === 0) {
           const actualId = msg.actualSessionId || pendingSessionId;
 
-          if (!currentSessionId) {
-            setCurrentSessionId(actualId);
-            if (msg.actualSessionId && !isRemoteProject(selectedProject)) {
-              onNavigateToSession?.(actualId);
-            }
+          setCurrentSessionId(actualId);
+          if (msg.actualSessionId && !isRemoteProject(selectedProject)) {
+            onNavigateToSession?.(actualId);
           }
 
           sessionStorage.removeItem('pendingSessionId');
@@ -295,7 +293,7 @@ export function useChatRealtimeHandlers({
           // Remote Claude sessions do not participate in local filesystem watchers,
           // so refresh projects explicitly after a successful run to surface the
           // newly persisted session in the sidebar.
-          if (window.refreshProjects) {
+          if (isRemoteProject(selectedProject) && window.refreshProjects) {
             setTimeout(() => window.refreshProjects?.(), 500);
           }
         }

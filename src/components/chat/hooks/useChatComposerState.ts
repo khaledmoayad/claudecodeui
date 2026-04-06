@@ -930,8 +930,8 @@ export function useChatComposerState({
         return;
       }
 
+      const remoteHostId = selectedProject ? extractHostId(selectedProject) || undefined : undefined;
       validIds.forEach((requestId) => {
-        const remoteHostId = selectedProject ? extractHostId(selectedProject) || undefined : undefined;
         sendMessage({
           type: 'claude-permission-response',
           requestId,

@@ -47,8 +47,9 @@ export class SSHTransport {
     this._buffer += text;
 
     if (this._buffer.length > MAX_MESSAGE_SIZE_BYTES) {
-      console.error('[SSHTransport] Buffer overflow, clearing buffer');
+      console.error('[SSHTransport] Buffer overflow, closing transport');
       this._buffer = '';
+      this.close();
       return;
     }
 

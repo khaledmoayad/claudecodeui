@@ -25,7 +25,7 @@ export function removePidFile() {
   try {
     unlinkSync(PID_FILE);
     log('PID file removed');
-  } catch (e) {
-    // File may already be gone -- not an error
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
   }
 }

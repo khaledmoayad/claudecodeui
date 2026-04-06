@@ -39,7 +39,7 @@ export async function handleGit(method, params) {
           return {
             stdout: err.stdout || '',
             stderr: err.stderr || '',
-            exitCode: err.code || 1,
+            exitCode: typeof err.code === 'number' ? err.code : (err.status || 1),
             message: err.message,
           };
         }

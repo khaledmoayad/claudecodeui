@@ -145,22 +145,27 @@ export async function deployDaemon(sshClient, options = {}) {
   // 6. Create remote directory
   await sshExec(sshClient, 'mkdir -p ~/' + DAEMON_REMOTE_DIR);
 
-  // 7. Open SFTP
-  const sftp = await new Promise((resolve, reject) => {
-    sshClient.sftp((err, sftp) => {
-      if (err) return reject(err);
-      resolve(sftp);
+  // 7. Open SFTP and upload
+  let sftp;
+  try {
+    sftp = await new Promise((resolve, reject) => {
+      sshClient.sftp((err, s) => {
+        if (err) return reject(err);
+        resolve(s);
+      });
     });
-  });
 
-  // 8. Upload to staging path
-  const remoteStagingPath = remoteHome + '/' + DAEMON_REMOTE_DIR + '/.ccud-staging.mjs';
-  await new Promise((resolve, reject) => {
-    sftp.fastPut(LOCAL_DAEMON_PATH, remoteStagingPath, (err) => {
-      if (err) return reject(err);
-      resolve();
+    // 8. Upload to staging path
+    const remoteStagingPath = remoteHome + '/' + DAEMON_REMOTE_DIR + '/.ccud-staging.mjs';
+    await new Promise((resolve, reject) => {
+      sftp.fastPut(LOCAL_DAEMON_PATH, remoteStagingPath, (err) => {
+        if (err) return reject(err);
+        resolve();
+      });
     });
-  });
+  } finally {
+    if (sftp) sftp.end();
+  }
 
   // 9. Get local file size for verification
   const localStat = await stat(LOCAL_DAEMON_PATH);
@@ -177,9 +182,6 @@ export async function deployDaemon(sshClient, options = {}) {
 
   // 12. Write version marker
   await sshExec(sshClient, "echo '" + localVersion + "' > ~/" + DAEMON_REMOTE_DIR + '/daemon-version');
-
-  // 13. End SFTP
-  sftp.end();
 
   return { deployed: true, version: localVersion, reason: options.force ? 'forced' : 'version-mismatch' };
 }

@@ -12,6 +12,27 @@ import { SSH_READY_TIMEOUT_MS } from '../constants/remote.js';
 const router = express.Router();
 
 /**
+ * Convert a DB row (snake_case) to a camelCase API shape.
+ * @param {object|null} row
+ * @returns {object|null}
+ */
+function serializeHost(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    hostname: row.hostname,
+    port: row.port,
+    username: row.username,
+    privateKeyPath: row.private_key_path,
+    daemonVersion: row.daemon_version,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    lastConnectedAt: row.last_connected_at,
+  };
+}
+
+/**
  * Validate host fields from request body.
  * @returns {{ valid: boolean, error?: string }}
  */
@@ -89,7 +110,7 @@ router.post('/', (req, res) => {
       username: username.trim(),
       privateKeyPath: privateKeyPath.trim(),
     });
-    return res.status(201).json(host);
+    return res.status(201).json(serializeHost(host));
   } catch (err) {
     console.error('Failed to create remote host:', err);
     return res.status(500).json({ error: 'Failed to create remote host' });
@@ -115,7 +136,7 @@ router.get('/connections', async (req, res) => {
 router.get('/', (req, res) => {
   try {
     const hosts = remoteHostsDb.getAll();
-    return res.json(hosts);
+    return res.json(hosts.map(serializeHost));
   } catch (err) {
     console.error('Failed to list remote hosts:', err);
     return res.status(500).json({ error: 'Failed to list remote hosts' });
@@ -129,7 +150,7 @@ router.get('/:id', (req, res) => {
     if (!host) {
       return res.status(404).json({ error: 'Remote host not found' });
     }
-    return res.json(host);
+    return res.json(serializeHost(host));
   } catch (err) {
     console.error('Failed to get remote host:', err);
     return res.status(500).json({ error: 'Failed to get remote host' });
@@ -155,7 +176,7 @@ router.put('/:id', (req, res) => {
       username: username.trim(),
       privateKeyPath: privateKeyPath.trim(),
     });
-    return res.json(updated);
+    return res.json(serializeHost(updated));
   } catch (err) {
     console.error('Failed to update remote host:', err);
     return res.status(500).json({ error: 'Failed to update remote host' });

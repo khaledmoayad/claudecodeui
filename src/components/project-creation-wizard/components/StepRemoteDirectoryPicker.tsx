@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowUp, CheckCircle, Folder, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../../../lib/utils';
@@ -32,14 +32,17 @@ export default function StepRemoteDirectoryPicker({
   const [entries, setEntries] = useState<DirectoryEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [browseError, setBrowseError] = useState<string | null>(null);
+  const fetchSeqRef = useRef(0);
 
   const fetchEntries = useCallback(async (browsePath: string) => {
     if (!hostId) return;
+    const seq = ++fetchSeqRef.current;
     setIsLoading(true);
     setBrowseError(null);
 
     try {
       const response = await api.remoteHosts.browse(hostId, browsePath);
+      if (seq !== fetchSeqRef.current) return;
       if (!response.ok) {
         const data = await response.json();
         setBrowseError(data.error || t('projectWizard.errors.failedToBrowseRemote'));
@@ -48,19 +51,29 @@ export default function StepRemoteDirectoryPicker({
       }
 
       const data = await response.json();
+      if (seq !== fetchSeqRef.current) return;
       setEntries(data.entries || []);
       setCurrentBrowsePath(data.path || browsePath);
       setPathInput(data.path || browsePath);
     } catch {
+      if (seq !== fetchSeqRef.current) return;
       setBrowseError(t('projectWizard.errors.failedToBrowseRemote'));
       setEntries([]);
     } finally {
-      setIsLoading(false);
+      if (seq === fetchSeqRef.current) {
+        setIsLoading(false);
+      }
     }
   }, [hostId, t]);
 
+  // Reset browse state when host changes
   useEffect(() => {
-    fetchEntries(currentBrowsePath);
+    const defaultPath = remotePath || '/home';
+    setCurrentBrowsePath(defaultPath);
+    setPathInput(defaultPath);
+    setEntries([]);
+    setBrowseError(null);
+    fetchEntries(defaultPath);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hostId]);
 
