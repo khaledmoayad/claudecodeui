@@ -15,11 +15,15 @@ export function createStdioTransport(onMessage) {
       return;
     }
 
-    const code = typeof err?.code === 'number' ? err.code : -32603;
-    const message = err instanceof Error ? err.message : 'Internal error';
-    process.stdout.write(JSON.stringify(
-      jsonrpc.error(id, new jsonrpc.JsonRpcError(message, code)),
-    ) + '\n');
+    try {
+      const code = typeof err?.code === 'number' ? err.code : -32603;
+      const message = err instanceof Error ? err.message : 'Internal error';
+      process.stdout.write(JSON.stringify(
+        jsonrpc.error(id, new jsonrpc.JsonRpcError(message, code)),
+      ) + '\n');
+    } catch {
+      // stdout may already be closed during shutdown
+    }
   };
 
   rl.on('line', (line) => {

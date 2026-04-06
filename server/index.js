@@ -629,6 +629,37 @@ setOnConnectionCreated((mgr, hostId) => {
         remoteWatchCleanups.delete(hostId);
       }
       // Keep remoteWatchedPaths so reconnection can re-establish them
+
+      // Clean up active remote Claude sessions for this host —
+      // notify writers so the UI shows an error instead of hanging
+      for (const [sessionId, session] of remoteClaudeSessions.entries()) {
+        if (session.hostId !== hostId) continue;
+        try {
+          session.writer.send(createNormalizedMessage({
+            kind: 'error',
+            content: 'Remote host disconnected',
+            provider: 'claude',
+            sessionId,
+          }));
+          session.writer.send(createNormalizedMessage({
+            kind: 'complete',
+            exitCode: 1,
+            provider: 'claude',
+            sessionId,
+          }));
+        } catch {
+          // Writer may already be closed
+        }
+        remoteClaudeSessions.delete(sessionId);
+        remoteClaudePendingPermissions.delete(sessionId);
+      }
+
+      // Clean up stale relay for this host
+      const relay = remoteClaudeHostRelays.get(hostId);
+      if (relay) {
+        try { relay.cleanup(); } catch { /* ignore */ }
+        remoteClaudeHostRelays.delete(hostId);
+      }
     }
 
     // Notify frontend about every state transition

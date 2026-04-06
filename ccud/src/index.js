@@ -110,6 +110,12 @@ function cleanup() {
   }
 }
 
+// Prevent unhandled rejections from crashing the daemon during shutdown
+process.on('unhandledRejection', (reason) => {
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  try { process.stderr.write(`[ccud] Unhandled rejection: ${msg}\n`); } catch { /* stderr may be closed */ }
+});
+
 // Signal handlers
 process.on('SIGTERM', cleanup);
 process.on('SIGINT', cleanup);
