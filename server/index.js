@@ -2474,7 +2474,35 @@ function handleShellConnection(ws) {
                 // Detect if this is a remote project
                 if (data.hostId) {
                   const remoteHostId = data.hostId;
-                  const remoteSessionKey = `remote:${remoteHostId}:${sessionId || data.projectPath || 'default'}`;
+
+                  // Build the shell command from provider/sessionId, matching local PTY logic
+                  let remoteShellCommand = initialCommand || null;
+                  if (!isPlainShell && !remoteShellCommand) {
+                    if (provider === 'cursor') {
+                      remoteShellCommand = hasSession && sessionId
+                        ? `cursor-agent --resume="${sessionId}"`
+                        : 'cursor-agent';
+                    } else if (provider === 'codex') {
+                      remoteShellCommand = hasSession && sessionId
+                        ? `codex resume "${sessionId}" || codex`
+                        : 'codex';
+                    } else if (provider === 'gemini') {
+                      remoteShellCommand = hasSession && sessionId
+                        ? `gemini --resume "${sessionId}"`
+                        : 'gemini';
+                    } else {
+                      // Claude (default)
+                      remoteShellCommand = hasSession && sessionId
+                        ? `claude --resume "${sessionId}" || claude`
+                        : 'claude';
+                    }
+                  }
+
+                  // Include command in cache key for parity with local PTY keys
+                  const cmdSuffix = isPlainShell && initialCommand
+                    ? `_cmd_${Buffer.from(initialCommand).toString('base64').slice(0, 16)}`
+                    : '';
+                  const remoteSessionKey = `remote:${remoteHostId}:${sessionId || data.projectPath || 'default'}${cmdSuffix}`;
                   ptySessionKey = remoteSessionKey;
 
                   // Check for existing cached session
@@ -2591,9 +2619,9 @@ function handleShellConnection(ws) {
                       stream.write('cd ' + JSON.stringify(data.projectPath) + ' && clear\n');
                     }
 
-                    // Launch initial command (provider shell or plain command)
-                    if (initialCommand) {
-                      stream.write(initialCommand + '\n');
+                    // Launch provider session or initial command
+                    if (remoteShellCommand) {
+                      stream.write(remoteShellCommand + '\n');
                     }
 
                     // Cache the session

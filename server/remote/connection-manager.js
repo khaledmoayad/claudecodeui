@@ -383,6 +383,7 @@ export class SSHConnectionManager extends EventEmitter {
     );
 
     this._reconnectTimer = setTimeout(() => {
+      this._reconnectTimer = null;
       this._doConnect().catch((err) => {
         this._handleConnectionFailure(err.message);
       });
